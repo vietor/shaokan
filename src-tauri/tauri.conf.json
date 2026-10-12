@@ -16,7 +16,8 @@
         "width": 1100,
         "height": 760,
         "minWidth": 860,
-        "minHeight": 600
+        "minHeight": 600,
+        "additionalBrowserArgs": "--disable-features=LayoutNG,Translate --disable-gpu-program-cache --disable-extensions --process-per-site"
       }
     ],
     "security": {
