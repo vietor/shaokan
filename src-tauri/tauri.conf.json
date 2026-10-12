@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Shaokan",
   "version": "0.1.0",
-  "identifier": "org.vxwo.shaokan",
+  "identifier": "com.github.vietor.shaokan",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "少看",
+        "title": "Shaokan",
         "width": 1100,
         "height": 760,
         "minWidth": 640,
