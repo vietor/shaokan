@@ -3,7 +3,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import MarkdownIt from "markdown-it";
 import hljs from "highlight.js";
-import { render as renderPlantUml } from "@plantuml/core/plantuml.js";
 import "./App.css";
 
 interface MdFile {
@@ -76,36 +75,70 @@ function createMd() {
 const md = createMd();
 
 let vizReady: Promise<void> | null = null;
+function loadViz(): Promise<void> {
+  return (async () => {
+    const { default: source } = await import("@plantuml/core/viz-global.js?raw");
+    await new Promise<void>((resolve, reject) => {
+      const url = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
+      const s = document.createElement("script");
+      s.onload = () => {
+        URL.revokeObjectURL(url);
+        s.remove();
+        resolve();
+      };
+      s.onerror = () => {
+        URL.revokeObjectURL(url);
+        s.remove();
+        reject(new Error("viz-global.js 加载失败"));
+      };
+      s.src = url;
+      document.head.appendChild(s);
+    });
+  })();
+}
 function ensureViz(): Promise<void> {
   if (!vizReady) {
-    vizReady = (async () => {
-      const { default: source } = await import("@plantuml/core/viz-global.js?raw");
-      await new Promise<void>((resolve, reject) => {
-        const url = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
-        const s = document.createElement("script");
-        s.onload = () => {
-          URL.revokeObjectURL(url);
-          resolve();
-        };
-        s.onerror = () => {
-          URL.revokeObjectURL(url);
-          reject(new Error("viz-global.js 加载失败"));
-        };
-        s.src = url;
-        document.head.appendChild(s);
-      });
-    })();
+    vizReady = loadViz().catch((e) => {
+      vizReady = null;
+      throw e;
+    });
   }
   return vizReady;
 }
 
+let plantUmlReady: Promise<typeof import("@plantuml/core/plantuml.js")> | null = null;
+function ensurePlantUml(): Promise<typeof import("@plantuml/core/plantuml.js")> {
+  if (!plantUmlReady) {
+    plantUmlReady = import("@plantuml/core/plantuml.js").catch((e) => {
+      plantUmlReady = null;
+      throw e;
+    });
+  }
+  return plantUmlReady;
+}
+
+let renderEpoch = 0;
+const pendingFinish = new Set<() => void>();
+
+function cancelPendingRenders(): number {
+  renderEpoch++;
+  pendingFinish.forEach((f) => f());
+  pendingFinish.clear();
+  return renderEpoch;
+}
+
 let renderChain: Promise<void> = Promise.resolve();
 
-function renderPlantUmlBlock(block: HTMLElement, source: string, dark: boolean): Promise<void> {
+function renderPlantUmlBlock(block: HTMLElement, source: string, dark: boolean, epoch: number): Promise<void> {
   const task = renderChain.then(
     () =>
       new Promise<void>((resolve) => {
+        if (epoch !== renderEpoch) {
+          resolve();
+          return;
+        }
         const finish = () => {
+          pendingFinish.delete(finish);
           observer.disconnect();
           clearTimeout(timer);
           resolve();
@@ -115,15 +148,26 @@ function renderPlantUmlBlock(block: HTMLElement, source: string, dark: boolean):
         });
         const timer = setTimeout(() => {
           finish();
-          block.innerHTML = '<div class="plantuml-error">PlantUML 渲染超时</div>';
+          if (block.isConnected) {
+            block.innerHTML = '<div class="plantuml-error">PlantUML 渲染超时</div>';
+          }
         }, 20000);
+        pendingFinish.add(finish);
         observer.observe(block, { childList: true, subtree: true });
-        try {
-          renderPlantUml(source.split("\n"), block.id, { dark });
-        } catch (e) {
-          finish();
-          block.innerHTML = `<div class="plantuml-error">PlantUML 渲染失败: ${escapeHtml(String(e))}</div>`;
-        }
+        Promise.all([ensureViz(), ensurePlantUml()])
+          .then(([, { render }]) => {
+            if (epoch !== renderEpoch || !block.isConnected) {
+              finish();
+              return;
+            }
+            render(source.split("\n"), block.id, { dark });
+          })
+          .catch((e) => {
+            finish();
+            if (block.isConnected) {
+              block.innerHTML = `<div class="plantuml-error">PlantUML 渲染失败: ${escapeHtml(String(e))}</div>`;
+            }
+          });
       })
   );
   renderChain = task.catch(() => {});
@@ -133,23 +177,37 @@ function renderPlantUmlBlock(block: HTMLElement, source: string, dark: boolean):
 let mermaidReady: Promise<typeof import("mermaid").default> | null = null;
 function ensureMermaid(): Promise<typeof import("mermaid").default> {
   if (!mermaidReady) {
-    mermaidReady = import("mermaid").then((m) => m.default);
+    mermaidReady = import("mermaid")
+      .then((m) => m.default)
+      .catch((e) => {
+        mermaidReady = null;
+        throw e;
+      });
   }
   return mermaidReady;
 }
 
-function renderMermaidBlock(block: HTMLElement, source: string, dark: boolean): Promise<void> {
+let mermaidTheme: string | null = null;
+
+function renderMermaidBlock(block: HTMLElement, source: string, dark: boolean, epoch: number): Promise<void> {
   const task = renderChain.then(async () => {
+    if (epoch !== renderEpoch) return;
     try {
       const mermaid = await ensureMermaid();
-      mermaid.initialize({
-        startOnLoad: false,
-        securityLevel: "strict",
-        suppressErrorRendering: true,
-        theme: dark ? "dark" : "default",
-        fontFamily: "inherit",
-      });
+      if (epoch !== renderEpoch || !block.isConnected) return;
+      const theme = dark ? "dark" : "default";
+      if (mermaidTheme !== theme) {
+        mermaid.initialize({
+          startOnLoad: false,
+          securityLevel: "strict",
+          suppressErrorRendering: true,
+          theme,
+          fontFamily: "inherit",
+        });
+        mermaidTheme = theme;
+      }
       const { svg } = await mermaid.render(`${block.id}-svg`, source);
+      if (epoch !== renderEpoch || !block.isConnected) return;
       block.innerHTML = svg;
 
       const svgEl = block.querySelector<SVGSVGElement>("svg");
@@ -159,7 +217,9 @@ function renderMermaidBlock(block: HTMLElement, source: string, dark: boolean): 
         svgEl.setAttribute("height", String(vb.height));
       }
     } catch (e) {
-      block.innerHTML = `<div class="mermaid-error">Mermaid 渲染失败: ${escapeHtml(String(e))}</div>`;
+      if (epoch === renderEpoch && block.isConnected) {
+        block.innerHTML = `<div class="mermaid-error">Mermaid 渲染失败: ${escapeHtml(String(e))}</div>`;
+      }
     }
   });
   renderChain = task.catch(() => {});
@@ -215,6 +275,7 @@ export default function App() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const marksRef = useRef<HTMLElement[]>([]);
+  const openSeqRef = useRef(0);
 
   const resolvedTheme: "light" | "dark" =
     theme === "system" ? (systemDark ? "dark" : "light") : theme;
@@ -277,6 +338,7 @@ export default function App() {
   }, [currentPath, loadDir]);
 
   const openFile = useCallback(async (file: MdFile) => {
+    const seq = ++openSeqRef.current;
     setQuery("");
     setMatchCount(0);
     setCurrentMatch(-1);
@@ -284,14 +346,16 @@ export default function App() {
     setLoadingDoc(true);
     try {
       const content = await invoke<string>("read_md_file", { path: file.path });
+      if (seq !== openSeqRef.current) return;
       setHtml(md.render(content));
       setActivePath(file.path);
       setError(null);
     } catch (e) {
+      if (seq !== openSeqRef.current) return;
       setError(String(e));
       setHtml("");
     } finally {
-      setLoadingDoc(false);
+      if (seq === openSeqRef.current) setLoadingDoc(false);
     }
   }, []);
 
@@ -382,6 +446,7 @@ export default function App() {
   }, [html]);
 
   useEffect(() => {
+    const epoch = cancelPendingRenders();
     const root = contentRef.current;
     if (!root) return;
     const blocks = Array.from(
@@ -393,25 +458,19 @@ export default function App() {
 
     (async () => {
       for (const block of blocks) {
-        if (cancelled) return;
+        if (cancelled || epoch !== renderEpoch) return;
         if (block.classList.contains("plantuml-container")) {
           const source = block.dataset.plantumlSource
             ? unescapeHtml(block.dataset.plantumlSource)
             : "";
           if (!source.trim()) continue;
-          try {
-            await ensureViz();
-          } catch (e) {
-            block.innerHTML = `<div class="plantuml-error">PlantUML 渲染失败: ${escapeHtml(String(e))}</div>`;
-            continue;
-          }
-          await renderPlantUmlBlock(block, source, dark);
+          await renderPlantUmlBlock(block, source, dark, epoch);
         } else {
           const source = block.dataset.mermaidSource
             ? unescapeHtml(block.dataset.mermaidSource)
             : "";
           if (!source.trim()) continue;
-          await renderMermaidBlock(block, source, dark);
+          await renderMermaidBlock(block, source, dark, epoch);
         }
       }
     })();

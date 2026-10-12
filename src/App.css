@@ -505,7 +505,8 @@ button.icon-btn:disabled { opacity: 0.4; cursor: default; }
 }
 
 .plantuml-container svg {
-  max-width: 100%;
+  display: block;
+  margin: 0 auto;
   height: auto;
 }
 
