@@ -151,6 +151,13 @@ function renderMermaidBlock(block: HTMLElement, source: string, dark: boolean): 
       });
       const { svg } = await mermaid.render(`${block.id}-svg`, source);
       block.innerHTML = svg;
+
+      const svgEl = block.querySelector<SVGSVGElement>("svg");
+      const vb = svgEl?.viewBox.baseVal;
+      if (svgEl && vb && vb.width > 0) {
+        svgEl.setAttribute("width", String(vb.width));
+        svgEl.setAttribute("height", String(vb.height));
+      }
     } catch (e) {
       block.innerHTML = `<div class="mermaid-error">Mermaid 渲染失败: ${escapeHtml(String(e))}</div>`;
     }

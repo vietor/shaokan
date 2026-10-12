@@ -504,9 +504,14 @@ button.icon-btn:disabled { opacity: 0.4; cursor: default; }
   text-align: center;
 }
 
-.plantuml-container svg,
-.mermaid-container svg {
+.plantuml-container svg {
   max-width: 100%;
+  height: auto;
+}
+
+.mermaid-container svg {
+  display: block;
+  margin: 0 auto;
   height: auto;
 }
 
