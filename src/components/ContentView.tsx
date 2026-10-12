@@ -1,4 +1,5 @@
 import type { MouseEvent, RefObject } from "react";
+import { t } from "../i18n";
 
 interface ContentViewProps {
   html: string;
@@ -23,8 +24,8 @@ export default function ContentView({
     <div className="content" ref={scrollRef}>
       {error && (
         <div className="error-banner" role="alert">
-          <span>加载失败：{error}</span>
-          <button onClick={onDismissError} title="关闭" aria-label="关闭">
+          <span>{t("loadFailed", { error })}</span>
+          <button onClick={onDismissError} title={t("close")} aria-label={t("close")}>
             ×
           </button>
         </div>
@@ -37,9 +38,9 @@ export default function ContentView({
       />
       {!html && !error && (
         <p className="placeholder">
-          {loadingDoc ? "加载中…" : "从左侧选择一个 Markdown 文件"}
+          {loadingDoc ? t("loading") : t("pickFile")}
           {!loadingDoc && (
-            <span className="hint">Ctrl+F 快速搜索 · 支持 PlantUML 图表</span>
+            <span className="hint">{t("hint")}</span>
           )}
         </p>
       )}

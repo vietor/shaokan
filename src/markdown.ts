@@ -1,5 +1,6 @@
 import MarkdownIt from "markdown-it";
 import hljs from "highlight.js";
+import { t } from "./i18n";
 
 function createMd() {
   const md = new MarkdownIt({
@@ -23,14 +24,14 @@ function createMd() {
     if (info === "plantuml") {
       const id = `plantuml-${Math.random().toString(36).slice(2, 10)}`;
       const escaped = escapeHtml(token.content);
-      const loading = token.content.trim() ? '<div class="plantuml-loading">渲染中…</div>' : "";
+      const loading = token.content.trim() ? `<div class="plantuml-loading">${t("rendering")}</div>` : "";
       return `<div class="plantuml-container" id="${id}" data-plantuml-source="${escaped}">${loading}</div>`;
     }
 
     if (info === "mermaid") {
       const id = `mermaid-${Math.random().toString(36).slice(2, 10)}`;
       const escaped = escapeHtml(token.content);
-      const loading = token.content.trim() ? '<div class="mermaid-loading">渲染中…</div>' : "";
+      const loading = token.content.trim() ? `<div class="mermaid-loading">${t("rendering")}</div>` : "";
       return `<div class="mermaid-container" id="${id}" data-mermaid-source="${escaped}">${loading}</div>`;
     }
 
@@ -57,7 +58,7 @@ function loadViz(): Promise<void> {
       s.onerror = () => {
         URL.revokeObjectURL(url);
         s.remove();
-        reject(new Error("viz-global.js 加载失败"));
+        reject(new Error(t("vizLoadFailed")));
       };
       s.src = url;
       document.head.appendChild(s);
@@ -117,7 +118,7 @@ function renderPlantUmlBlock(block: HTMLElement, source: string, dark: boolean, 
         const timer = setTimeout(() => {
           finish();
           if (block.isConnected) {
-            block.innerHTML = '<div class="plantuml-error">PlantUML 渲染超时</div>';
+            block.innerHTML = `<div class="plantuml-error">${t("plantumlTimeout")}</div>`;
           }
         }, 20000);
         pendingFinish.add(finish);
@@ -133,7 +134,7 @@ function renderPlantUmlBlock(block: HTMLElement, source: string, dark: boolean, 
           .catch((e) => {
             finish();
             if (block.isConnected) {
-              block.innerHTML = `<div class="plantuml-error">PlantUML 渲染失败: ${escapeHtml(String(e))}</div>`;
+              block.innerHTML = `<div class="plantuml-error">${t("plantumlFailed", { error: escapeHtml(String(e)) })}</div>`;
             }
           });
       })
@@ -186,7 +187,7 @@ function renderMermaidBlock(block: HTMLElement, source: string, dark: boolean, e
       }
     } catch (e) {
       if (epoch === renderEpoch && block.isConnected) {
-        block.innerHTML = `<div class="mermaid-error">Mermaid 渲染失败: ${escapeHtml(String(e))}</div>`;
+        block.innerHTML = `<div class="mermaid-error">${t("mermaidFailed", { error: escapeHtml(String(e)) })}</div>`;
       }
     }
   });

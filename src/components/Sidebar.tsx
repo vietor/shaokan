@@ -1,4 +1,5 @@
 import type { MdFile, OutlineItem } from "../types";
+import { t } from "../i18n";
 
 interface SidebarProps {
   currentPath: string;
@@ -40,8 +41,8 @@ export default function Sidebar({
         <button
           className="icon-btn"
           onClick={onRefresh}
-          title="刷新目录"
-          aria-label="刷新目录"
+          title={t("refreshDir")}
+          aria-label={t("refreshDir")}
         >
           <svg
             width="14"
@@ -60,8 +61,8 @@ export default function Sidebar({
         <button
           className="icon-btn"
           onClick={onHome}
-          title="回到 Home"
-          aria-label="回到 Home"
+          title={t("backHome")}
+          aria-label={t("backHome")}
         >
           <svg
             width="14"
@@ -83,20 +84,20 @@ export default function Sidebar({
           className={tab === "files" ? "active" : ""}
           onClick={() => onTabChange("files")}
         >
-          目录
+          {t("filesTab")}
         </button>
         <button
           className={tab === "outline" ? "active" : ""}
           onClick={() => onTabChange("outline")}
         >
-          大纲
+          {t("outlineTab")}
         </button>
       </div>
       {tab === "files" ? (
         <ul className="file-list">
-          {loadingDir && <li className="empty">加载中…</li>}
+          {loadingDir && <li className="empty">{t("loading")}</li>}
           {!loadingDir && files.length === 0 && (
-            <li className="empty">（此目录下没有 .md 文件）</li>
+            <li className="empty">{t("emptyDir")}</li>
           )}
           {files.map((f) => (
             <li
@@ -113,7 +114,7 @@ export default function Sidebar({
         <ul className="file-list">
           {outline.length === 0 && (
             <li className="empty">
-              {hasDoc ? "（此文档没有标题）" : "（未打开文档）"}
+              {hasDoc ? t("emptyOutlineDoc") : t("emptyOutlineNone")}
             </li>
           )}
           {outline.map((h) => (

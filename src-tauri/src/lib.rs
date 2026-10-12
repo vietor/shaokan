@@ -12,10 +12,10 @@ struct MdFile {
 fn list_md_files(dir: String) -> Result<Vec<MdFile>, String> {
     let path = PathBuf::from(&dir);
     if !path.exists() {
-        return Err(format!("目录不存在: {}", dir));
+        return Err(format!("dir_not_found:{}", dir));
     }
     if !path.is_dir() {
-        return Err(format!("不是目录: {}", dir));
+        return Err(format!("not_a_dir:{}", dir));
     }
 
     let mut files = Vec::new();

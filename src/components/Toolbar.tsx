@@ -1,5 +1,6 @@
 import type { RefObject } from "react";
 import type { ThemeMode } from "../types";
+import { t } from "../i18n";
 
 interface ToolbarProps {
   activePath: string | null;
@@ -39,19 +40,19 @@ export default function Toolbar({
   onCycleTheme,
 }: ToolbarProps) {
   const activeName = activePath ? activePath.split(/[\\/]/).pop() : "";
-  const themeLabel = theme === "light" ? "亮色" : theme === "dark" ? "暗色" : "跟随系统";
+  const themeLabel = theme === "light" ? t("themeLight") : theme === "dark" ? t("themeDark") : t("themeSystem");
 
   return (
     <div className="toolbar">
       <span className="file-name" title={activePath || undefined}>
         {activeName}
       </span>
-      {loadingDoc && <span className="loading-tag">加载中…</span>}
+      {loadingDoc && <span className="loading-tag">{t("loading")}</span>}
       <input
         ref={searchRef}
         className="search-input"
         type="search"
-        placeholder="输入字符串定位…"
+        placeholder={t("searchPlaceholder")}
         value={query}
         onChange={(e) => onQueryChange(e.target.value)}
         onKeyDown={(e) => {
@@ -66,28 +67,28 @@ export default function Toolbar({
       <span className="match-count">
         {matchCount > 0 ? `${currentMatch + 1}/${matchCount}` : query ? "0/0" : ""}
       </span>
-      <button onClick={onPrev} disabled={matchCount === 0} title="上一个">
+      <button onClick={onPrev} disabled={matchCount === 0} title={t("prev")}>
         ‹
       </button>
-      <button onClick={onNext} disabled={matchCount === 0} title="下一个">
+      <button onClick={onNext} disabled={matchCount === 0} title={t("next")}>
         ›
       </button>
       <span className="toolbar-divider" />
       <button
         onClick={onDecreaseFont}
         disabled={!canDecreaseFont}
-        title="减小字号"
+        title={t("decreaseFont")}
       >
         A−
       </button>
       <button
         onClick={onIncreaseFont}
         disabled={!canIncreaseFont}
-        title="增大字号"
+        title={t("increaseFont")}
       >
         A+
       </button>
-      <button className="icon-btn" onClick={onCycleTheme} title={`主题：${themeLabel}（点击切换）`}>
+      <button className="icon-btn" onClick={onCycleTheme} title={t("themeTitle", { theme: themeLabel })}>
         {resolvedTheme === "dark" ? (
           <svg
             width="14"

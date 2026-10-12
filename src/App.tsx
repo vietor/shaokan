@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback, useRef, type MouseEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { md, renderDiagrams, slugify } from "./markdown";
+import { t } from "./i18n";
 import type { MdFile, OutlineItem, ThemeMode } from "./types";
 import Sidebar from "./components/Sidebar";
 import Toolbar from "./components/Toolbar";
@@ -21,6 +23,17 @@ function loadTheme(): ThemeMode {
 function loadFontSize(): number {
   const v = parseInt(localStorage.getItem(FONT_KEY) || "", 10);
   return v >= MIN_FONT && v <= MAX_FONT ? v : 15;
+}
+
+function formatError(e: unknown): string {
+  const s = String(e);
+  const i = s.indexOf(":");
+  if (i > 0) {
+    const code = s.slice(0, i);
+    if (code === "dir_not_found") return t("dirNotFound", { path: s.slice(i + 1) });
+    if (code === "not_a_dir") return t("notADir", { path: s.slice(i + 1) });
+  }
+  return s;
 }
 
 export default function App() {
@@ -71,6 +84,10 @@ export default function App() {
   }, [fontSize]);
 
   useEffect(() => {
+    getCurrentWindow().setTitle(t("appTitle")).catch(() => {});
+  }, []);
+
+  useEffect(() => {
     invoke<string>("get_home_dir")
       .then((home) => {
         setHomeDir(home);
@@ -100,7 +117,7 @@ export default function App() {
       setFiles(list);
     } catch (e) {
       setFiles([]);
-      setError(String(e));
+      setError(formatError(e));
     } finally {
       setLoadingDir(false);
     }
@@ -176,19 +193,19 @@ export default function App() {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "copy-btn";
-      btn.textContent = "复制";
+      btn.textContent = t("copy");
       btn.onclick = () => {
         navigator.clipboard.writeText(code.textContent || "").then(
           () => {
-            btn.textContent = "已复制";
+            btn.textContent = t("copied");
             btn.classList.add("copied");
           },
           () => {
-            btn.textContent = "复制失败";
+            btn.textContent = t("copyFailed");
           }
         ).finally(() => {
           setTimeout(() => {
-            btn.textContent = "复制";
+            btn.textContent = t("copy");
             btn.classList.remove("copied");
           }, 1500);
         });
