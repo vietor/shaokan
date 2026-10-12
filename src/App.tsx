@@ -1,22 +1,12 @@
 import { useState, useEffect, useCallback, useRef, type MouseEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import MarkdownIt from "markdown-it";
-import hljs from "highlight.js";
+import { md, renderDiagrams, slugify } from "./markdown";
+import type { MdFile, OutlineItem, ThemeMode } from "./types";
+import Sidebar from "./components/Sidebar";
+import Toolbar from "./components/Toolbar";
+import ContentView from "./components/ContentView";
 import "./App.css";
-
-interface MdFile {
-  name: string;
-  path: string;
-}
-
-interface OutlineItem {
-  level: number;
-  text: string;
-  id: string;
-}
-
-type ThemeMode = "light" | "dark" | "system";
 
 const THEME_KEY = "md-browser-theme";
 const FONT_KEY = "md-browser-font";
@@ -31,223 +21,6 @@ function loadTheme(): ThemeMode {
 function loadFontSize(): number {
   const v = parseInt(localStorage.getItem(FONT_KEY) || "", 10);
   return v >= MIN_FONT && v <= MAX_FONT ? v : 15;
-}
-
-function createMd() {
-  const md = new MarkdownIt({
-    html: true,
-    linkify: true,
-    breaks: false,
-    highlight: (str: string, lang: string): string => {
-      if (lang && lang.toLowerCase() === "plantuml") return "";
-      if (lang && hljs.getLanguage(lang)) {
-        return hljs.highlight(str, { language: lang }).value;
-      }
-      return "";
-    },
-  });
-
-  const defaultFence = md.renderer.rules.fence!;
-  md.renderer.rules.fence = (tokens, idx, options, env, self) => {
-    const token = tokens[idx];
-    const info = token.info.trim().toLowerCase();
-
-    if (info === "plantuml") {
-      const id = `plantuml-${Math.random().toString(36).slice(2, 10)}`;
-      const escaped = escapeHtml(token.content);
-      const loading = token.content.trim() ? '<div class="plantuml-loading">渲染中…</div>' : "";
-      return `<div class="plantuml-container" id="${id}" data-plantuml-source="${escaped}">${loading}</div>`;
-    }
-
-    if (info === "mermaid") {
-      const id = `mermaid-${Math.random().toString(36).slice(2, 10)}`;
-      const escaped = escapeHtml(token.content);
-      const loading = token.content.trim() ? '<div class="mermaid-loading">渲染中…</div>' : "";
-      return `<div class="mermaid-container" id="${id}" data-mermaid-source="${escaped}">${loading}</div>`;
-    }
-
-    return defaultFence(tokens, idx, options, env, self);
-  };
-
-  return md;
-}
-
-const md = createMd();
-
-let vizReady: Promise<void> | null = null;
-function loadViz(): Promise<void> {
-  return (async () => {
-    const { default: source } = await import("@plantuml/core/viz-global.js?raw");
-    await new Promise<void>((resolve, reject) => {
-      const url = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
-      const s = document.createElement("script");
-      s.onload = () => {
-        URL.revokeObjectURL(url);
-        s.remove();
-        resolve();
-      };
-      s.onerror = () => {
-        URL.revokeObjectURL(url);
-        s.remove();
-        reject(new Error("viz-global.js 加载失败"));
-      };
-      s.src = url;
-      document.head.appendChild(s);
-    });
-  })();
-}
-function ensureViz(): Promise<void> {
-  if (!vizReady) {
-    vizReady = loadViz().catch((e) => {
-      vizReady = null;
-      throw e;
-    });
-  }
-  return vizReady;
-}
-
-let plantUmlReady: Promise<typeof import("@plantuml/core/plantuml.js")> | null = null;
-function ensurePlantUml(): Promise<typeof import("@plantuml/core/plantuml.js")> {
-  if (!plantUmlReady) {
-    plantUmlReady = import("@plantuml/core/plantuml.js").catch((e) => {
-      plantUmlReady = null;
-      throw e;
-    });
-  }
-  return plantUmlReady;
-}
-
-let renderEpoch = 0;
-const pendingFinish = new Set<() => void>();
-
-function cancelPendingRenders(): number {
-  renderEpoch++;
-  pendingFinish.forEach((f) => f());
-  pendingFinish.clear();
-  return renderEpoch;
-}
-
-let renderChain: Promise<void> = Promise.resolve();
-
-function renderPlantUmlBlock(block: HTMLElement, source: string, dark: boolean, epoch: number): Promise<void> {
-  const task = renderChain.then(
-    () =>
-      new Promise<void>((resolve) => {
-        if (epoch !== renderEpoch) {
-          resolve();
-          return;
-        }
-        const finish = () => {
-          pendingFinish.delete(finish);
-          observer.disconnect();
-          clearTimeout(timer);
-          resolve();
-        };
-        const observer = new MutationObserver(() => {
-          if (block.querySelector("svg") || (block.textContent || "").trim()) finish();
-        });
-        const timer = setTimeout(() => {
-          finish();
-          if (block.isConnected) {
-            block.innerHTML = '<div class="plantuml-error">PlantUML 渲染超时</div>';
-          }
-        }, 20000);
-        pendingFinish.add(finish);
-        observer.observe(block, { childList: true, subtree: true });
-        Promise.all([ensureViz(), ensurePlantUml()])
-          .then(([, { render }]) => {
-            if (epoch !== renderEpoch || !block.isConnected) {
-              finish();
-              return;
-            }
-            render(source.split("\n"), block.id, { dark });
-          })
-          .catch((e) => {
-            finish();
-            if (block.isConnected) {
-              block.innerHTML = `<div class="plantuml-error">PlantUML 渲染失败: ${escapeHtml(String(e))}</div>`;
-            }
-          });
-      })
-  );
-  renderChain = task.catch(() => {});
-  return task;
-}
-
-let mermaidReady: Promise<typeof import("mermaid").default> | null = null;
-function ensureMermaid(): Promise<typeof import("mermaid").default> {
-  if (!mermaidReady) {
-    mermaidReady = import("mermaid")
-      .then((m) => m.default)
-      .catch((e) => {
-        mermaidReady = null;
-        throw e;
-      });
-  }
-  return mermaidReady;
-}
-
-let mermaidTheme: string | null = null;
-
-function renderMermaidBlock(block: HTMLElement, source: string, dark: boolean, epoch: number): Promise<void> {
-  const task = renderChain.then(async () => {
-    if (epoch !== renderEpoch) return;
-    try {
-      const mermaid = await ensureMermaid();
-      if (epoch !== renderEpoch || !block.isConnected) return;
-      const theme = dark ? "dark" : "default";
-      if (mermaidTheme !== theme) {
-        mermaid.initialize({
-          startOnLoad: false,
-          securityLevel: "strict",
-          suppressErrorRendering: true,
-          theme,
-          fontFamily: "inherit",
-        });
-        mermaidTheme = theme;
-      }
-      const { svg } = await mermaid.render(`${block.id}-svg`, source);
-      if (epoch !== renderEpoch || !block.isConnected) return;
-      block.innerHTML = svg;
-
-      const svgEl = block.querySelector<SVGSVGElement>("svg");
-      const vb = svgEl?.viewBox.baseVal;
-      if (svgEl && vb && vb.width > 0) {
-        svgEl.setAttribute("width", String(vb.width));
-        svgEl.setAttribute("height", String(vb.height));
-      }
-    } catch (e) {
-      if (epoch === renderEpoch && block.isConnected) {
-        block.innerHTML = `<div class="mermaid-error">Mermaid 渲染失败: ${escapeHtml(String(e))}</div>`;
-      }
-    }
-  });
-  renderChain = task.catch(() => {});
-  return task;
-}
-
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/"/g, "&quot;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
-
-function unescapeHtml(str: string): string {
-  const txt = document.createElement("textarea");
-  txt.innerHTML = str;
-  return txt.value;
-}
-
-function slugify(text: string): string {
-  return text
-    .trim()
-    .toLowerCase()
-    .replace(/[^\w一-龥\s-]/g, "")
-    .replace(/\s+/g, "-")
-    .replace(/-{2,}/g, "-")
-    .replace(/^-+|-+$/g, "");
 }
 
 export default function App() {
@@ -446,38 +219,9 @@ export default function App() {
   }, [html]);
 
   useEffect(() => {
-    const epoch = cancelPendingRenders();
     const root = contentRef.current;
     if (!root) return;
-    const blocks = Array.from(
-      root.querySelectorAll<HTMLElement>(".plantuml-container, .mermaid-container")
-    );
-    if (blocks.length === 0) return;
-    let cancelled = false;
-    const dark = resolvedTheme === "dark";
-
-    (async () => {
-      for (const block of blocks) {
-        if (cancelled || epoch !== renderEpoch) return;
-        if (block.classList.contains("plantuml-container")) {
-          const source = block.dataset.plantumlSource
-            ? unescapeHtml(block.dataset.plantumlSource)
-            : "";
-          if (!source.trim()) continue;
-          await renderPlantUmlBlock(block, source, dark, epoch);
-        } else {
-          const source = block.dataset.mermaidSource
-            ? unescapeHtml(block.dataset.mermaidSource)
-            : "";
-          if (!source.trim()) continue;
-          await renderMermaidBlock(block, source, dark, epoch);
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
+    return renderDiagrams(root, resolvedTheme === "dark");
   }, [html, resolvedTheme]);
 
   const scrollToHeading = (id: string) => {
@@ -575,6 +319,14 @@ export default function App() {
     if (total) setCurrentMark((currentMatch - 1 + total) % total);
   };
 
+  const handleQueryChange = (q: string) => {
+    setQuery(q);
+    runSearch(q);
+  };
+
+  const decreaseFont = () => setFontSize((v) => Math.max(MIN_FONT, v - 1));
+  const increaseFont = () => setFontSize((v) => Math.min(MAX_FONT, v + 1));
+
   const goHome = useCallback(() => {
     if (homeDir) setCurrentPath(homeDir);
   }, [homeDir]);
@@ -587,214 +339,51 @@ export default function App() {
     setTheme((t) => (t === "light" ? "dark" : t === "dark" ? "system" : "light"));
   };
 
-  const themeLabel = theme === "light" ? "亮色" : theme === "dark" ? "暗色" : "跟随系统";
-  const activeName = activePath ? activePath.split(/[\\/]/).pop() : "";
-
   return (
     <div id="app">
-      <aside className="sidebar">
-        <div className="sidebar-header">
-          <div className="path-label" title={currentPath}>
-            {currentPath || "~/"}
-          </div>
-          <button
-            className="icon-btn"
-            onClick={refreshDir}
-            title="刷新目录"
-            aria-label="刷新目录"
-          >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
-              <path d="M21 3v5h-5" />
-            </svg>
-          </button>
-          <button
-            className="icon-btn"
-            onClick={goHome}
-            title="回到 Home"
-            aria-label="回到 Home"
-          >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M3 10.5 12 3l9 7.5" />
-              <path d="M5 9.5V21h14V9.5" />
-            </svg>
-          </button>
-        </div>
-        <div className="sidebar-tabs">
-          <button
-            className={tab === "files" ? "active" : ""}
-            onClick={() => setTab("files")}
-          >
-            目录
-          </button>
-          <button
-            className={tab === "outline" ? "active" : ""}
-            onClick={() => setTab("outline")}
-          >
-            大纲
-          </button>
-        </div>
-        {tab === "files" ? (
-          <ul className="file-list">
-            {loadingDir && <li className="empty">加载中…</li>}
-            {!loadingDir && files.length === 0 && (
-              <li className="empty">（此目录下没有 .md 文件）</li>
-            )}
-            {files.map((f) => (
-              <li
-                key={f.path}
-                className={f.path === activePath ? "active" : ""}
-                title={f.path}
-                onClick={() => openFile(f)}
-              >
-                {f.name}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <ul className="file-list">
-            {outline.length === 0 && (
-              <li className="empty">
-                {html ? "（此文档没有标题）" : "（未打开文档）"}
-              </li>
-            )}
-            {outline.map((h) => (
-              <li
-                key={h.id}
-                className={h.id === activeId ? "active" : ""}
-                style={{ paddingLeft: 14 + (h.level - 1) * 12 }}
-                title={h.text}
-                onClick={() => scrollToHeading(h.id)}
-              >
-                {h.text}
-              </li>
-            ))}
-          </ul>
-        )}
-      </aside>
+      <Sidebar
+        currentPath={currentPath}
+        loadingDir={loadingDir}
+        files={files}
+        activePath={activePath}
+        tab={tab}
+        outline={outline}
+        activeId={activeId}
+        hasDoc={!!html}
+        onRefresh={refreshDir}
+        onHome={goHome}
+        onTabChange={setTab}
+        onOpenFile={openFile}
+        onOutlineClick={scrollToHeading}
+      />
       <main className="main-pane">
-        <div className="toolbar">
-          <span className="file-name" title={activePath || undefined}>
-            {activeName}
-          </span>
-          {loadingDoc && <span className="loading-tag">加载中…</span>}
-          <input
-            ref={searchRef}
-            className="search-input"
-            type="search"
-            placeholder="输入字符串定位…"
-            value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              runSearch(e.target.value);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                if (e.shiftKey) goPrev();
-                else goNext();
-              } else if (e.key === "Escape") {
-                setQuery("");
-                runSearch("");
-              }
-            }}
-          />
-          <span className="match-count">
-            {matchCount > 0 ? `${currentMatch + 1}/${matchCount}` : query ? "0/0" : ""}
-          </span>
-          <button onClick={goPrev} disabled={matchCount === 0} title="上一个">
-            ‹
-          </button>
-          <button onClick={goNext} disabled={matchCount === 0} title="下一个">
-            ›
-          </button>
-          <span className="toolbar-divider" />
-          <button
-            onClick={() => setFontSize((v) => Math.max(MIN_FONT, v - 1))}
-            disabled={fontSize <= MIN_FONT}
-            title="减小字号"
-          >
-            A−
-          </button>
-          <button
-            onClick={() => setFontSize((v) => Math.min(MAX_FONT, v + 1))}
-            disabled={fontSize >= MAX_FONT}
-            title="增大字号"
-          >
-            A+
-          </button>
-          <button className="icon-btn" onClick={cycleTheme} title={`主题：${themeLabel}（点击切换）`}>
-            {resolvedTheme === "dark" ? (
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
-              </svg>
-            ) : (
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <circle cx="12" cy="12" r="4" />
-                <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
-              </svg>
-            )}
-          </button>
-        </div>
-        <div className="content" ref={scrollRef}>
-          {error && (
-            <div className="error-banner" role="alert">
-              <span>加载失败：{error}</span>
-              <button onClick={() => setError(null)} title="关闭" aria-label="关闭">
-                ×
-              </button>
-            </div>
-          )}
-          <article
-            ref={contentRef}
-            className="markdown-body"
-            onClick={handleContentClick}
-            dangerouslySetInnerHTML={{ __html: html }}
-          />
-          {!html && !error && (
-            <p className="placeholder">
-              {loadingDoc ? "加载中…" : "从左侧选择一个 Markdown 文件"}
-              {!loadingDoc && (
-                <span className="hint">Ctrl+F 快速搜索 · 支持 PlantUML 图表</span>
-              )}
-            </p>
-          )}
-        </div>
+        <Toolbar
+          activePath={activePath}
+          loadingDoc={loadingDoc}
+          searchRef={searchRef}
+          query={query}
+          matchCount={matchCount}
+          currentMatch={currentMatch}
+          onQueryChange={handleQueryChange}
+          onNext={goNext}
+          onPrev={goPrev}
+          onDecreaseFont={decreaseFont}
+          onIncreaseFont={increaseFont}
+          canDecreaseFont={fontSize > MIN_FONT}
+          canIncreaseFont={fontSize < MAX_FONT}
+          theme={theme}
+          resolvedTheme={resolvedTheme}
+          onCycleTheme={cycleTheme}
+        />
+        <ContentView
+          html={html}
+          error={error}
+          loadingDoc={loadingDoc}
+          contentRef={contentRef}
+          scrollRef={scrollRef}
+          onContentClick={handleContentClick}
+          onDismissError={() => setError(null)}
+        />
       </main>
     </div>
   );

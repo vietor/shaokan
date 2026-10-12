@@ -1,0 +1,134 @@
+import type { MdFile, OutlineItem } from "../types";
+
+interface SidebarProps {
+  currentPath: string;
+  loadingDir: boolean;
+  files: MdFile[];
+  activePath: string | null;
+  tab: "files" | "outline";
+  outline: OutlineItem[];
+  activeId: string | null;
+  hasDoc: boolean;
+  onRefresh: () => void;
+  onHome: () => void;
+  onTabChange: (tab: "files" | "outline") => void;
+  onOpenFile: (file: MdFile) => void;
+  onOutlineClick: (id: string) => void;
+}
+
+export default function Sidebar({
+  currentPath,
+  loadingDir,
+  files,
+  activePath,
+  tab,
+  outline,
+  activeId,
+  hasDoc,
+  onRefresh,
+  onHome,
+  onTabChange,
+  onOpenFile,
+  onOutlineClick,
+}: SidebarProps) {
+  return (
+    <aside className="sidebar">
+      <div className="sidebar-header">
+        <div className="path-label" title={currentPath}>
+          {currentPath || "~/"}
+        </div>
+        <button
+          className="icon-btn"
+          onClick={onRefresh}
+          title="刷新目录"
+          aria-label="刷新目录"
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+            <path d="M21 3v5h-5" />
+          </svg>
+        </button>
+        <button
+          className="icon-btn"
+          onClick={onHome}
+          title="回到 Home"
+          aria-label="回到 Home"
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M3 10.5 12 3l9 7.5" />
+            <path d="M5 9.5V21h14V9.5" />
+          </svg>
+        </button>
+      </div>
+      <div className="sidebar-tabs">
+        <button
+          className={tab === "files" ? "active" : ""}
+          onClick={() => onTabChange("files")}
+        >
+          目录
+        </button>
+        <button
+          className={tab === "outline" ? "active" : ""}
+          onClick={() => onTabChange("outline")}
+        >
+          大纲
+        </button>
+      </div>
+      {tab === "files" ? (
+        <ul className="file-list">
+          {loadingDir && <li className="empty">加载中…</li>}
+          {!loadingDir && files.length === 0 && (
+            <li className="empty">（此目录下没有 .md 文件）</li>
+          )}
+          {files.map((f) => (
+            <li
+              key={f.path}
+              className={f.path === activePath ? "active" : ""}
+              title={f.path}
+              onClick={() => onOpenFile(f)}
+            >
+              {f.name}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <ul className="file-list">
+          {outline.length === 0 && (
+            <li className="empty">
+              {hasDoc ? "（此文档没有标题）" : "（未打开文档）"}
+            </li>
+          )}
+          {outline.map((h) => (
+            <li
+              key={h.id}
+              className={h.id === activeId ? "active" : ""}
+              style={{ paddingLeft: 14 + (h.level - 1) * 12 }}
+              title={h.text}
+              onClick={() => onOutlineClick(h.id)}
+            >
+              {h.text}
+            </li>
+          ))}
+        </ul>
+      )}
+    </aside>
+  );
+}
