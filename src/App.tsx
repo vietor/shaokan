@@ -244,7 +244,7 @@ export default function App() {
   const scrollToHeading = (id: string) => {
     const el = document.getElementById(id);
     if (el && contentRef.current?.contains(el)) {
-      el.scrollIntoView({ block: "start", behavior: "smooth" });
+      el.scrollIntoView({ block: "start" });
     }
   };
 
