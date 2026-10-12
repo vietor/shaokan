@@ -4,7 +4,19 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Markdown Browser</title>
-    <script src="/node_modules/@plantuml/core/viz-global.js"></script>
+    <script>
+      try {
+        var mode = localStorage.getItem("md-browser-theme") || "system";
+        var dark =
+          mode === "dark" ||
+          (mode === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.dataset.theme = dark ? "dark" : "light";
+        var size = parseInt(localStorage.getItem("md-browser-font") || "", 10);
+        if (size >= 12 && size <= 22) {
+          document.documentElement.style.setProperty("--content-font-size", size + "px");
+        }
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

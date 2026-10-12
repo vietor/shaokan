@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, type MouseEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import MarkdownIt from "markdown-it";
 import hljs from "highlight.js";
-import "highlight.js/styles/github.css";
 import { render as renderPlantUml } from "@plantuml/core/plantuml.js";
 import "./App.css";
 
@@ -14,10 +14,28 @@ interface MdFile {
 interface OutlineItem {
   level: number;
   text: string;
+  id: string;
+}
+
+type ThemeMode = "light" | "dark" | "system";
+
+const THEME_KEY = "md-browser-theme";
+const FONT_KEY = "md-browser-font";
+const MIN_FONT = 12;
+const MAX_FONT = 22;
+
+function loadTheme(): ThemeMode {
+  const v = localStorage.getItem(THEME_KEY);
+  return v === "light" || v === "dark" || v === "system" ? v : "system";
+}
+
+function loadFontSize(): number {
+  const v = parseInt(localStorage.getItem(FONT_KEY) || "", 10);
+  return v >= MIN_FONT && v <= MAX_FONT ? v : 15;
 }
 
 // ====== 创建 markdown-it 实例 + PlantUML 插件 ======
-function createMd(): MarkdownIt {
+function createMd() {
   const md = new MarkdownIt({
     html: true,
     linkify: true,
@@ -31,25 +49,121 @@ function createMd(): MarkdownIt {
     },
   });
 
-  // PlantUML 插件
+  // 图表插件（PlantUML / Mermaid）
   const defaultFence = md.renderer.rules.fence!;
   md.renderer.rules.fence = (tokens, idx, options, env, self) => {
     const token = tokens[idx];
     const info = token.info.trim().toLowerCase();
 
-    if (info !== "plantuml") {
-      return defaultFence(tokens, idx, options, env, self);
+    if (info === "plantuml") {
+      const id = `plantuml-${Math.random().toString(36).slice(2, 10)}`;
+      const escaped = escapeHtml(token.content);
+      const loading = token.content.trim() ? '<div class="plantuml-loading">渲染中…</div>' : "";
+      return `<div class="plantuml-container" id="${id}" data-plantuml-source="${escaped}">${loading}</div>`;
     }
 
-    const id = `plantuml-${Math.random().toString(36).slice(2, 10)}`;
-    const escaped = escapeHtml(token.content);
-    return `<div class="plantuml-container" id="${id}" data-plantuml-source="${escaped}"></div>`;
+    if (info === "mermaid") {
+      const id = `mermaid-${Math.random().toString(36).slice(2, 10)}`;
+      const escaped = escapeHtml(token.content);
+      const loading = token.content.trim() ? '<div class="mermaid-loading">渲染中…</div>' : "";
+      return `<div class="mermaid-container" id="${id}" data-mermaid-source="${escaped}">${loading}</div>`;
+    }
+
+    return defaultFence(tokens, idx, options, env, self);
   };
 
   return md;
 }
 
 const md = createMd();
+
+// ====== 图表渲染调度（PlantUML / Mermaid）======
+// viz-global.js（Graphviz 布局引擎）必须以普通 <script> 注入，引擎经全局 Viz 使用；
+// 用 ?raw 取回源码、以 Blob URL 作为 classic script 加载，dev 与打包构建行为一致
+let vizReady: Promise<void> | null = null;
+function ensureViz(): Promise<void> {
+  if (!vizReady) {
+    vizReady = (async () => {
+      const { default: source } = await import("@plantuml/core/viz-global.js?raw");
+      await new Promise<void>((resolve, reject) => {
+        const url = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
+        const s = document.createElement("script");
+        s.onload = () => {
+          URL.revokeObjectURL(url);
+          resolve();
+        };
+        s.onerror = () => {
+          URL.revokeObjectURL(url);
+          reject(new Error("viz-global.js 加载失败"));
+        };
+        s.src = url;
+        document.head.appendChild(s);
+      });
+    })();
+  }
+  return vizReady;
+}
+
+// 引擎内部状态共享，多图必须串行渲染：等上一张写入结果后再渲染下一张
+let renderChain: Promise<void> = Promise.resolve();
+
+function renderPlantUmlBlock(block: HTMLElement, source: string, dark: boolean): Promise<void> {
+  const task = renderChain.then(
+    () =>
+      new Promise<void>((resolve) => {
+        const finish = () => {
+          observer.disconnect();
+          clearTimeout(timer);
+          resolve();
+        };
+        const observer = new MutationObserver(() => {
+          if (block.querySelector("svg") || (block.textContent || "").trim()) finish();
+        });
+        const timer = setTimeout(() => {
+          finish();
+          block.innerHTML = '<div class="plantuml-error">PlantUML 渲染超时</div>';
+        }, 20000);
+        observer.observe(block, { childList: true, subtree: true });
+        try {
+          renderPlantUml(source.split("\n"), block.id, { dark });
+        } catch (e) {
+          finish();
+          block.innerHTML = `<div class="plantuml-error">PlantUML 渲染失败: ${escapeHtml(String(e))}</div>`;
+        }
+      })
+  );
+  renderChain = task.catch(() => {});
+  return task;
+}
+
+let mermaidReady: Promise<typeof import("mermaid").default> | null = null;
+function ensureMermaid(): Promise<typeof import("mermaid").default> {
+  if (!mermaidReady) {
+    mermaidReady = import("mermaid").then((m) => m.default);
+  }
+  return mermaidReady;
+}
+
+function renderMermaidBlock(block: HTMLElement, source: string, dark: boolean): Promise<void> {
+  const task = renderChain.then(async () => {
+    try {
+      const mermaid = await ensureMermaid();
+      mermaid.initialize({
+        startOnLoad: false,
+        securityLevel: "strict",
+        suppressErrorRendering: true,
+        theme: dark ? "dark" : "default",
+        fontFamily: "inherit",
+      });
+      const { svg } = await mermaid.render(`${block.id}-svg`, source);
+      block.innerHTML = svg;
+    } catch (e) {
+      block.innerHTML = `<div class="mermaid-error">Mermaid 渲染失败: ${escapeHtml(String(e))}</div>`;
+    }
+  });
+  renderChain = task.catch(() => {});
+  return task;
+}
 
 function escapeHtml(str: string): string {
   return str
@@ -65,6 +179,16 @@ function unescapeHtml(str: string): string {
   return txt.value;
 }
 
+function slugify(text: string): string {
+  return text
+    .trim()
+    .toLowerCase()
+    .replace(/[^\w一-龥\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-{2,}/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
 // ====== App 组件 ======
 export default function App() {
   const [homeDir, setHomeDir] = useState("");
@@ -75,12 +199,45 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<"files" | "outline">("files");
   const [outline, setOutline] = useState<OutlineItem[]>([]);
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [matchCount, setMatchCount] = useState(0);
   const [currentMatch, setCurrentMatch] = useState(-1);
+  const [theme, setTheme] = useState<ThemeMode>(loadTheme);
+  const [fontSize, setFontSize] = useState<number>(loadFontSize);
+  const [loadingDir, setLoadingDir] = useState(false);
+  const [loadingDoc, setLoadingDoc] = useState(false);
+  const [systemDark, setSystemDark] = useState(
+    () => window.matchMedia("(prefers-color-scheme: dark)").matches
+  );
 
   const contentRef = useRef<HTMLElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const marksRef = useRef<HTMLElement[]>([]);
+
+  const resolvedTheme: "light" | "dark" =
+    theme === "system" ? (systemDark ? "dark" : "light") : theme;
+
+  // 跟随系统主题
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const onChange = (e: MediaQueryListEvent) => setSystemDark(e.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+
+  // 应用并持久化主题
+  useEffect(() => {
+    document.documentElement.dataset.theme = resolvedTheme;
+    localStorage.setItem(THEME_KEY, theme);
+  }, [theme, resolvedTheme]);
+
+  // 应用并持久化正文字号
+  useEffect(() => {
+    document.documentElement.style.setProperty("--content-font-size", `${fontSize}px`);
+    localStorage.setItem(FONT_KEY, String(fontSize));
+  }, [fontSize]);
 
   // 初始化：获取 home 目录
   useEffect(() => {
@@ -92,16 +249,32 @@ export default function App() {
       .catch((e) => setError(String(e)));
   }, []);
 
+  // Ctrl/Cmd+F 聚焦搜索框
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        searchRef.current?.focus();
+        searchRef.current?.select();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   // 加载目录中的 .md 文件
   const loadDir = useCallback(async (dir: string) => {
     setCurrentPath(dir);
     setError(null);
+    setLoadingDir(true);
     try {
       const list = await invoke<MdFile[]>("list_md_files", { dir });
       setFiles(list);
     } catch (e) {
       setFiles([]);
       setError(String(e));
+    } finally {
+      setLoadingDir(false);
     }
   }, []);
 
@@ -116,6 +289,7 @@ export default function App() {
     setMatchCount(0);
     setCurrentMatch(-1);
     marksRef.current = [];
+    setLoadingDoc(true);
     try {
       const content = await invoke<string>("read_md_file", { path: file.path });
       setHtml(md.render(content));
@@ -124,44 +298,162 @@ export default function App() {
     } catch (e) {
       setError(String(e));
       setHtml("");
+    } finally {
+      setLoadingDoc(false);
     }
   }, []);
 
-  // Markdown 渲染完成后，处理 PlantUML 占位符
+  // Markdown 渲染完成后：重置滚动、生成标题锚点、表格包裹、代码块增强、大纲与滚动高亮
   useEffect(() => {
-    if (!contentRef.current) return;
-    const blocks = contentRef.current.querySelectorAll<HTMLElement>(".plantuml-container");
-    blocks.forEach(async (block) => {
-      const source = block.dataset.plantumlSource
-        ? unescapeHtml(block.dataset.plantumlSource)
-        : "";
-      if (!source.trim()) return;
+    const root = contentRef.current;
+    if (!root) return;
 
-      try {
-        await renderPlantUml(source.split("\n"), block.id);
-      } catch (e) {
-        block.innerHTML = `<div class="plantuml-error">PlantUML 渲染失败: ${e}</div>`;
-      }
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+    setActiveId(null);
+
+    const headings = Array.from(root.querySelectorAll<HTMLElement>("h1, h2, h3, h4, h5, h6"));
+
+    // 生成 slug 锚点（去重）
+    const used = new Map<string, number>();
+    for (const h of headings) {
+      const base = slugify(h.textContent || "") || "section";
+      const n = used.get(base) || 0;
+      used.set(base, n + 1);
+      h.id = n === 0 ? base : `${base}-${n + 1}`;
+    }
+
+    // 宽表格横向滚动包裹
+    root.querySelectorAll("table").forEach((table) => {
+      if (table.parentElement?.classList.contains("table-wrap")) return;
+      const wrap = document.createElement("div");
+      wrap.className = "table-wrap";
+      table.replaceWith(wrap);
+      wrap.appendChild(table);
     });
+
+    // 代码块：语言标签 + 复制按钮
+    root.querySelectorAll<HTMLElement>("pre > code").forEach((code) => {
+      const pre = code.parentElement as HTMLElement;
+      if (pre.parentElement?.classList.contains("code-block")) return;
+      const block = document.createElement("div");
+      block.className = "code-block";
+      pre.replaceWith(block);
+      block.appendChild(pre);
+
+      const lang = code.className.match(/language-([\w+#-]+)/)?.[1];
+      if (lang) {
+        const tag = document.createElement("span");
+        tag.className = "code-lang";
+        tag.textContent = lang;
+        block.appendChild(tag);
+      }
+
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "copy-btn";
+      btn.textContent = "复制";
+      btn.onclick = () => {
+        navigator.clipboard.writeText(code.textContent || "").then(
+          () => {
+            btn.textContent = "已复制";
+            btn.classList.add("copied");
+          },
+          () => {
+            btn.textContent = "复制失败";
+          }
+        ).finally(() => {
+          setTimeout(() => {
+            btn.textContent = "复制";
+            btn.classList.remove("copied");
+          }, 1500);
+        });
+      };
+      block.appendChild(btn);
+    });
+
+    setOutline(
+      headings.map((h) => ({
+        level: Number(h.tagName[1]),
+        text: h.textContent || "",
+        id: h.id,
+      }))
+    );
+
+    // 滚动高亮当前标题
+    const visible = new Map<Element, boolean>();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const en of entries) visible.set(en.target, en.isIntersecting);
+        const current = headings.find((h) => visible.get(h));
+        if (current) setActiveId(current.id);
+      },
+      { root: scrollRef.current, rootMargin: "0px 0px -70% 0px", threshold: 0 }
+    );
+    headings.forEach((h) => observer.observe(h));
+
+    return () => observer.disconnect();
   }, [html]);
 
-  // 渲染完成后提取标题生成大纲
+  // Markdown 渲染完成后，渲染 PlantUML / Mermaid 图表（先确保布局引擎就绪，且全局串行）
   useEffect(() => {
-    const headings = contentRef.current?.querySelectorAll("h1, h2, h3, h4, h5, h6");
-    setOutline(
-      headings
-        ? Array.from(headings).map((h) => ({
-            level: Number(h.tagName[1]),
-            text: h.textContent || "",
-          }))
-        : []
+    const root = contentRef.current;
+    if (!root) return;
+    const blocks = Array.from(
+      root.querySelectorAll<HTMLElement>(".plantuml-container, .mermaid-container")
     );
-  }, [html]);
+    if (blocks.length === 0) return;
+    let cancelled = false;
+    const dark = resolvedTheme === "dark";
+
+    (async () => {
+      for (const block of blocks) {
+        if (cancelled) return;
+        if (block.classList.contains("plantuml-container")) {
+          const source = block.dataset.plantumlSource
+            ? unescapeHtml(block.dataset.plantumlSource)
+            : "";
+          if (!source.trim()) continue;
+          try {
+            await ensureViz();
+          } catch (e) {
+            block.innerHTML = `<div class="plantuml-error">PlantUML 渲染失败: ${escapeHtml(String(e))}</div>`;
+            continue;
+          }
+          await renderPlantUmlBlock(block, source, dark);
+        } else {
+          const source = block.dataset.mermaidSource
+            ? unescapeHtml(block.dataset.mermaidSource)
+            : "";
+          if (!source.trim()) continue;
+          await renderMermaidBlock(block, source, dark);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [html, resolvedTheme]);
 
   // 点击大纲项滚动到对应标题
-  const scrollToHeading = (index: number) => {
-    const headings = contentRef.current?.querySelectorAll("h1, h2, h3, h4, h5, h6");
-    headings?.[index]?.scrollIntoView({ block: "start" });
+  const scrollToHeading = (id: string) => {
+    const el = document.getElementById(id);
+    if (el && contentRef.current?.contains(el)) {
+      el.scrollIntoView({ block: "start", behavior: "smooth" });
+    }
+  };
+
+  // 正文链接：内部锚点平滑滚动，外部链接用系统浏览器打开
+  const handleContentClick = (e: MouseEvent) => {
+    const a = (e.target as HTMLElement).closest("a");
+    if (!a) return;
+    e.preventDefault();
+    const href = a.getAttribute("href") || "";
+    if (href.startsWith("#")) {
+      scrollToHeading(decodeURIComponent(href.slice(1)));
+    } else if (/^(?:https?|mailto|tel):/i.test(href)) {
+      openUrl(href).catch((err) => console.error(err));
+    }
   };
 
   // ====== 搜索定位 ======
@@ -197,7 +489,7 @@ export default function App() {
       const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
       while (walker.nextNode()) {
         const node = walker.currentNode as Text;
-        if (!node.data || node.parentElement?.closest("svg")) continue;
+        if (!node.data || node.parentElement?.closest("svg, .copy-btn, .code-lang, .plantuml-loading, .mermaid-loading")) continue;
         textNodes.push(node);
       }
 
@@ -246,6 +538,19 @@ export default function App() {
     if (homeDir) setCurrentPath(homeDir);
   }, [homeDir]);
 
+  // 刷新当前目录
+  const refreshDir = () => {
+    if (currentPath) loadDir(currentPath);
+  };
+
+  // 循环切换主题：亮色 → 暗色 → 跟随系统
+  const cycleTheme = () => {
+    setTheme((t) => (t === "light" ? "dark" : t === "dark" ? "system" : "light"));
+  };
+
+  const themeLabel = theme === "light" ? "亮色" : theme === "dark" ? "暗色" : "跟随系统";
+  const activeName = activePath ? activePath.split(/[\\/]/).pop() : "";
+
   return (
     <div id="app">
       <aside className="sidebar">
@@ -253,8 +558,45 @@ export default function App() {
           <div className="path-label" title={currentPath}>
             {currentPath || "~/"}
           </div>
-          <button id="go-home" onClick={goHome} title="回到 Home">
-            🏠
+          <button
+            className="icon-btn"
+            onClick={refreshDir}
+            title="刷新目录"
+            aria-label="刷新目录"
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+              <path d="M21 3v5h-5" />
+            </svg>
+          </button>
+          <button
+            className="icon-btn"
+            onClick={goHome}
+            title="回到 Home"
+            aria-label="回到 Home"
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M3 10.5 12 3l9 7.5" />
+              <path d="M5 9.5V21h14V9.5" />
+            </svg>
           </button>
         </div>
         <div className="sidebar-tabs">
@@ -273,8 +615,8 @@ export default function App() {
         </div>
         {tab === "files" ? (
           <ul className="file-list">
-            {error && <li className="empty">加载失败: {error}</li>}
-            {!error && files.length === 0 && (
+            {loadingDir && <li className="empty">加载中…</li>}
+            {!loadingDir && files.length === 0 && (
               <li className="empty">（此目录下没有 .md 文件）</li>
             )}
             {files.map((f) => (
@@ -295,12 +637,13 @@ export default function App() {
                 {html ? "（此文档没有标题）" : "（未打开文档）"}
               </li>
             )}
-            {outline.map((h, i) => (
+            {outline.map((h) => (
               <li
-                key={i}
+                key={h.id}
+                className={h.id === activeId ? "active" : ""}
                 style={{ paddingLeft: 14 + (h.level - 1) * 12 }}
                 title={h.text}
-                onClick={() => scrollToHeading(i)}
+                onClick={() => scrollToHeading(h.id)}
               >
                 {h.text}
               </li>
@@ -310,7 +653,12 @@ export default function App() {
       </aside>
       <main className="main-pane">
         <div className="toolbar">
+          <span className="file-name" title={activePath || undefined}>
+            {activeName}
+          </span>
+          {loadingDoc && <span className="loading-tag">加载中…</span>}
           <input
+            ref={searchRef}
             className="search-input"
             type="search"
             placeholder="输入字符串定位…"
@@ -323,6 +671,9 @@ export default function App() {
               if (e.key === "Enter") {
                 if (e.shiftKey) goPrev();
                 else goNext();
+              } else if (e.key === "Escape") {
+                setQuery("");
+                runSearch("");
               }
             }}
           />
@@ -335,15 +686,74 @@ export default function App() {
           <button onClick={goNext} disabled={matchCount === 0} title="下一个">
             ›
           </button>
+          <span className="toolbar-divider" />
+          <button
+            onClick={() => setFontSize((v) => Math.max(MIN_FONT, v - 1))}
+            disabled={fontSize <= MIN_FONT}
+            title="减小字号"
+          >
+            A−
+          </button>
+          <button
+            onClick={() => setFontSize((v) => Math.min(MAX_FONT, v + 1))}
+            disabled={fontSize >= MAX_FONT}
+            title="增大字号"
+          >
+            A+
+          </button>
+          <button className="icon-btn" onClick={cycleTheme} title={`主题：${themeLabel}（点击切换）`}>
+            {resolvedTheme === "dark" ? (
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
+              </svg>
+            ) : (
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <circle cx="12" cy="12" r="4" />
+                <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
+              </svg>
+            )}
+          </button>
         </div>
-        <div className="content">
+        <div className="content" ref={scrollRef}>
+          {error && (
+            <div className="error-banner" role="alert">
+              <span>加载失败：{error}</span>
+              <button onClick={() => setError(null)} title="关闭" aria-label="关闭">
+                ×
+              </button>
+            </div>
+          )}
           <article
             ref={contentRef}
             className="markdown-body"
+            onClick={handleContentClick}
             dangerouslySetInnerHTML={{ __html: html }}
           />
           {!html && !error && (
-            <p className="placeholder">从左侧选择一个 Markdown 文件</p>
+            <p className="placeholder">
+              {loadingDoc ? "加载中…" : "从左侧选择一个 Markdown 文件"}
+              {!loadingDoc && (
+                <span className="hint">Ctrl+F 快速搜索 · 支持 PlantUML 图表</span>
+              )}
+            </p>
           )}
         </div>
       </main>
