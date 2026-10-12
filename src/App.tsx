@@ -13,6 +13,7 @@ import "./App.css";
 const THEME_KEY = "shaokan-theme";
 const FONT_KEY = "shaokan-font";
 const MIN_FONT = 12;
+const DEFAULT_FONT = 15;
 const MAX_FONT = 22;
 const MIN_SIDEBAR_WIDTH = 280;
 const MAX_SIDEBAR_WIDTH = MIN_SIDEBAR_WIDTH * 2;
@@ -24,7 +25,7 @@ function loadTheme(): ThemeMode {
 
 function loadFontSize(): number {
   const v = parseInt(localStorage.getItem(FONT_KEY) || "", 10);
-  return v >= MIN_FONT && v <= MAX_FONT ? v : 15;
+  return v >= MIN_FONT && v <= MAX_FONT ? v : DEFAULT_FONT;
 }
 
 function formatError(e: unknown): string {
@@ -350,6 +351,7 @@ export default function App() {
 
   const decreaseFont = () => setFontSize((v) => Math.max(MIN_FONT, v - 1));
   const increaseFont = () => setFontSize((v) => Math.min(MAX_FONT, v + 1));
+  const resetFontSize = () => setFontSize(DEFAULT_FONT);
 
   const resizeSidebar = (width: number) => {
     setSidebarWidth(Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, width)));
@@ -401,6 +403,7 @@ export default function App() {
           onPrev={goPrev}
           onDecreaseFont={decreaseFont}
           onIncreaseFont={increaseFont}
+          onResetFont={resetFontSize}
           canDecreaseFont={fontSize > MIN_FONT}
           canIncreaseFont={fontSize < MAX_FONT}
           theme={theme}
