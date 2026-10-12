@@ -88,8 +88,11 @@ export default function App() {
   }, [fontSize]);
 
   useEffect(() => {
-    getCurrentWindow().setTitle(t("appTitle")).catch(() => {});
-  }, []);
+    const name = activePath ? activePath.split(/[\\/]/).pop() : "";
+    getCurrentWindow()
+      .setTitle(name ? `${t("appTitle")} - ${name}` : t("appTitle"))
+      .catch(() => {});
+  }, [activePath]);
 
   useEffect(() => {
     invoke<string>("get_home_dir")
@@ -388,7 +391,6 @@ export default function App() {
       )}
       <main className="main-pane">
         <Toolbar
-          activePath={activePath}
           loadingDoc={loadingDoc}
           searchRef={searchRef}
           query={query}

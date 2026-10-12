@@ -3,7 +3,6 @@ import type { ThemeMode } from "../types";
 import { t } from "../i18n";
 
 interface ToolbarProps {
-  activePath: string | null;
   loadingDoc: boolean;
   searchRef: RefObject<HTMLInputElement | null>;
   query: string;
@@ -23,7 +22,6 @@ interface ToolbarProps {
 }
 
 export default function Toolbar({
-  activePath,
   loadingDoc,
   searchRef,
   query,
@@ -41,7 +39,6 @@ export default function Toolbar({
   onCycleTheme,
   onToggleSidebar,
 }: ToolbarProps) {
-  const activeName = activePath ? activePath.split(/[\\/]/).pop() : "";
   const themeLabel = theme === "light" ? t("themeLight") : theme === "dark" ? t("themeDark") : t("themeSystem");
 
   return (
@@ -61,9 +58,6 @@ export default function Toolbar({
           <path d="M9 3v18" />
         </svg>
       </button>
-      <span className="file-name" title={activePath || undefined}>
-        {activeName}
-      </span>
       {loadingDoc && <span className="loading-tag">{t("loading")}</span>}
       <input
         ref={searchRef}
