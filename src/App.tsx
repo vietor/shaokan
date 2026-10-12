@@ -8,8 +8,8 @@ import Toolbar from "./components/Toolbar";
 import ContentView from "./components/ContentView";
 import "./App.css";
 
-const THEME_KEY = "md-browser-theme";
-const FONT_KEY = "md-browser-font";
+const THEME_KEY = "shaokan-theme";
+const FONT_KEY = "shaokan-font";
 const MIN_FONT = 12;
 const MAX_FONT = 22;
 

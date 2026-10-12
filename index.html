@@ -3,15 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Markdown Browser</title>
+    <title>少看</title>
     <script>
       try {
-        var mode = localStorage.getItem("md-browser-theme") || "system";
+        var mode = localStorage.getItem("shaokan-theme") || "system";
         var dark =
           mode === "dark" ||
           (mode === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
         document.documentElement.dataset.theme = dark ? "dark" : "light";
-        var size = parseInt(localStorage.getItem("md-browser-font") || "", 10);
+        var size = parseInt(localStorage.getItem("shaokan-font") || "", 10);
         if (size >= 12 && size <= 22) {
           document.documentElement.style.setProperty("--content-font-size", size + "px");
         }
