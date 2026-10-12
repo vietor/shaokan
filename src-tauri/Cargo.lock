@@ -3098,6 +3098,8 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",
+ "webview2-com",
+ "windows-core",
 ]
 
 [[package]]

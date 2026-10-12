@@ -15,8 +15,8 @@
         "title": "Shaokan",
         "width": 1100,
         "height": 760,
-        "minWidth": 640,
-        "minHeight": 480
+        "minWidth": 860,
+        "minHeight": 600
       }
     ],
     "security": {

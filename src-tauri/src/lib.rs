@@ -54,10 +54,74 @@ fn get_home_dir() -> Result<String, String> {
     Ok(PathBuf::from(home).join("Documents").to_string_lossy().to_string())
 }
 
+#[cfg(windows)]
+fn setup_context_menu(app: &tauri::AppHandle) {
+    use tauri::Manager;
+    use webview2_com::Microsoft::Web::WebView2::Win32::{
+        ICoreWebView2, ICoreWebView2ContextMenuRequestedEventArgs, ICoreWebView2_11,
+    };
+    use webview2_com::{take_pwstr, ContextMenuRequestedEventHandler};
+    use windows_core::{Interface, PWSTR};
+
+    const EDIT_ITEMS: [&str; 8] = [
+        "undo",
+        "redo",
+        "cut",
+        "copy",
+        "paste",
+        "pasteAndMatchStyle",
+        "delete",
+        "selectAll",
+    ];
+
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    let _ = window.with_webview(|webview| {
+        let Ok(core) = (unsafe { webview.controller().CoreWebView2() }) else {
+            return;
+        };
+        let Ok(core) = core.cast::<ICoreWebView2_11>() else {
+            return;
+        };
+        unsafe {
+            let mut token = 0i64;
+            let _ = core.add_ContextMenuRequested(
+                &ContextMenuRequestedEventHandler::create(Box::new(
+                    |_sender: Option<ICoreWebView2>,
+                        args: Option<ICoreWebView2ContextMenuRequestedEventArgs>| {
+                            let Some(args) = args else {
+                                return Ok(());
+                            };
+                            let items = args.MenuItems()?;
+                            let mut count = 0u32;
+                            items.Count(&mut count)?;
+                            for i in (0..count).rev() {
+                                let item = items.GetValueAtIndex(i)?;
+                                let mut name = PWSTR::null();
+                                item.Name(&mut name)?;
+                                if !EDIT_ITEMS.contains(&take_pwstr(name).as_str()) {
+                                    items.RemoveValueAtIndex(i)?;
+                                }
+                            }
+                            Ok(())
+                        },
+                )),
+                &mut token,
+            );
+        }
+    });
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .setup(|app| {
+            #[cfg(windows)]
+            setup_context_menu(app.handle());
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             list_md_files,
             read_md_file,
