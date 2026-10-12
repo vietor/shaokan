@@ -1,3 +1,4 @@
+import { useState, type ReactNode } from "react";
 import type { MdFile, OutlineItem } from "../types";
 import { t } from "../i18n";
 
@@ -18,6 +19,26 @@ interface SidebarProps {
   onResize: (width: number) => void;
 }
 
+function highlightText(text: string, query: string) {
+  const lower = text.toLowerCase();
+  const parts: ReactNode[] = [];
+  let from = 0;
+  let idx = lower.indexOf(query);
+  while (idx !== -1) {
+    if (idx > from) parts.push(text.slice(from, idx));
+    parts.push(
+      <mark key={idx} className="search-hit">
+        {text.slice(idx, idx + query.length)}
+      </mark>
+    );
+    from = idx + query.length;
+    idx = lower.indexOf(query, from);
+  }
+  if (from === 0) return text;
+  if (from < text.length) parts.push(text.slice(from));
+  return parts;
+}
+
 export default function Sidebar({
   currentPath,
   loadingDir,
@@ -34,6 +55,27 @@ export default function Sidebar({
   onOutlineClick,
   onResize,
 }: SidebarProps) {
+  const [outlineFilter, setOutlineFilter] = useState("");
+
+  const q = outlineFilter.trim().toLowerCase();
+  let shown = outline;
+  if (q) {
+    const parents = outline.map(() => -1);
+    const stack: number[] = [];
+    outline.forEach((h, i) => {
+      while (stack.length && outline[stack[stack.length - 1]].level >= h.level) stack.pop();
+      if (stack.length) parents[i] = stack[stack.length - 1];
+      stack.push(i);
+    });
+    const keep = new Set<number>();
+    outline.forEach((h, i) => {
+      if (h.text.toLowerCase().includes(q)) {
+        for (let j = i; j !== -1; j = parents[j]) keep.add(j);
+      }
+    });
+    shown = outline.filter((_, i) => keep.has(i));
+  }
+
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
@@ -113,24 +155,33 @@ export default function Sidebar({
           ))}
         </ul>
       ) : (
-        <ul className="file-list">
-          {outline.length === 0 && (
-            <li className="empty">
-              {hasDoc ? t("emptyOutlineDoc") : t("emptyOutlineNone")}
-            </li>
-          )}
-          {outline.map((h) => (
-            <li
-              key={h.id}
-              className={h.id === activeId ? "active" : ""}
-              style={{ paddingLeft: 14 + (h.level - 1) * 12 }}
-              title={h.text}
-              onClick={() => onOutlineClick(h.id)}
-            >
-              {h.text}
-            </li>
-          ))}
-        </ul>
+        <>
+          <input
+            className="outline-filter"
+            type="search"
+            placeholder={t("outlineFilterPlaceholder")}
+            value={outlineFilter}
+            onChange={(e) => setOutlineFilter(e.target.value)}
+          />
+          <ul className="file-list">
+            {outline.length === 0 && (
+              <li className="empty">
+                {hasDoc ? t("emptyOutlineDoc") : t("emptyOutlineNone")}
+              </li>
+            )}
+            {shown.map((h) => (
+              <li
+                key={h.id}
+                className={h.id === activeId ? "active" : ""}
+                style={{ paddingLeft: 14 + (h.level - 1) * 12 }}
+                title={h.text}
+                onClick={() => onOutlineClick(h.id)}
+              >
+                {q ? highlightText(h.text, q) : h.text}
+              </li>
+            ))}
+          </ul>
+        </>
       )}
       <div
         className="sidebar-resizer"

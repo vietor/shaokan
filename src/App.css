@@ -184,6 +184,20 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
   cursor: default;
 }
 
+.outline-filter {
+  margin: 8px 10px 2px;
+  padding: 4px 10px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  outline: none;
+}
+
+.outline-filter:focus { border-color: var(--accent); }
+
 .main-pane {
   display: flex;
   flex-direction: column;
