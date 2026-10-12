@@ -19,6 +19,7 @@ interface ToolbarProps {
   theme: ThemeMode;
   resolvedTheme: "light" | "dark";
   onCycleTheme: () => void;
+  onToggleSidebar: () => void;
 }
 
 export default function Toolbar({
@@ -38,12 +39,28 @@ export default function Toolbar({
   theme,
   resolvedTheme,
   onCycleTheme,
+  onToggleSidebar,
 }: ToolbarProps) {
   const activeName = activePath ? activePath.split(/[\\/]/).pop() : "";
   const themeLabel = theme === "light" ? t("themeLight") : theme === "dark" ? t("themeDark") : t("themeSystem");
 
   return (
     <div className="toolbar">
+      <button className="icon-btn" onClick={onToggleSidebar} title={t("toggleSidebar")}>
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <rect x="3" y="3" width="18" height="18" rx="2" />
+          <path d="M9 3v18" />
+        </svg>
+      </button>
       <span className="file-name" title={activePath || undefined}>
         {activeName}
       </span>

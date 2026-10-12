@@ -15,6 +15,7 @@ interface SidebarProps {
   onTabChange: (tab: "files" | "outline") => void;
   onOpenFile: (file: MdFile) => void;
   onOutlineClick: (id: string) => void;
+  onResize: (width: number) => void;
 }
 
 export default function Sidebar({
@@ -31,6 +32,7 @@ export default function Sidebar({
   onTabChange,
   onOpenFile,
   onOutlineClick,
+  onResize,
 }: SidebarProps) {
   return (
     <aside className="sidebar">
@@ -130,6 +132,19 @@ export default function Sidebar({
           ))}
         </ul>
       )}
+      <div
+        className="sidebar-resizer"
+        onPointerDown={(e) => {
+          if (e.button !== 0) return;
+          e.preventDefault();
+          e.currentTarget.setPointerCapture(e.pointerId);
+          document.body.classList.add("resizing");
+        }}
+        onPointerMove={(e) => {
+          if (e.currentTarget.hasPointerCapture(e.pointerId)) onResize(e.clientX);
+        }}
+        onLostPointerCapture={() => document.body.classList.remove("resizing")}
+      />
     </aside>
   );
 }

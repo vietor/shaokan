@@ -91,12 +91,24 @@ html, body, #root {
 }
 
 .sidebar {
+  position: relative;
   background: var(--bg-alt);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
+
+.sidebar-resizer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 5px;
+  height: 100%;
+  cursor: col-resize;
+}
+
+body.resizing, body.resizing * { cursor: col-resize !important; user-select: none; }
 
 .sidebar-header {
   display: flex;

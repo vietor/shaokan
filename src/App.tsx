@@ -14,6 +14,8 @@ const THEME_KEY = "shaokan-theme";
 const FONT_KEY = "shaokan-font";
 const MIN_FONT = 12;
 const MAX_FONT = 22;
+const MIN_SIDEBAR_WIDTH = 280;
+const MAX_SIDEBAR_WIDTH = MIN_SIDEBAR_WIDTH * 2;
 
 function loadTheme(): ThemeMode {
   const v = localStorage.getItem(THEME_KEY);
@@ -51,6 +53,8 @@ export default function App() {
   const [currentMatch, setCurrentMatch] = useState(-1);
   const [theme, setTheme] = useState<ThemeMode>(loadTheme);
   const [fontSize, setFontSize] = useState<number>(loadFontSize);
+  const [sidebarWidth, setSidebarWidth] = useState(MIN_SIDEBAR_WIDTH);
+  const [sidebarHidden, setSidebarHidden] = useState(false);
   const [loadingDir, setLoadingDir] = useState(false);
   const [loadingDoc, setLoadingDoc] = useState(false);
   const [systemDark, setSystemDark] = useState(
@@ -344,6 +348,12 @@ export default function App() {
   const decreaseFont = () => setFontSize((v) => Math.max(MIN_FONT, v - 1));
   const increaseFont = () => setFontSize((v) => Math.min(MAX_FONT, v + 1));
 
+  const resizeSidebar = (width: number) => {
+    setSidebarWidth(Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, width)));
+  };
+
+  const toggleSidebar = () => setSidebarHidden((v) => !v);
+
   const goHome = useCallback(() => {
     if (homeDir) setCurrentPath(homeDir);
   }, [homeDir]);
@@ -357,22 +367,25 @@ export default function App() {
   };
 
   return (
-    <div id="app">
-      <Sidebar
-        currentPath={currentPath}
-        loadingDir={loadingDir}
-        files={files}
-        activePath={activePath}
-        tab={tab}
-        outline={outline}
-        activeId={activeId}
-        hasDoc={!!html}
-        onRefresh={refreshDir}
-        onHome={goHome}
-        onTabChange={setTab}
-        onOpenFile={openFile}
-        onOutlineClick={scrollToHeading}
-      />
+    <div id="app" style={{ gridTemplateColumns: sidebarHidden ? "1fr" : `${sidebarWidth}px 1fr` }}>
+      {!sidebarHidden && (
+        <Sidebar
+          currentPath={currentPath}
+          loadingDir={loadingDir}
+          files={files}
+          activePath={activePath}
+          tab={tab}
+          outline={outline}
+          activeId={activeId}
+          hasDoc={!!html}
+          onRefresh={refreshDir}
+          onHome={goHome}
+          onTabChange={setTab}
+          onOpenFile={openFile}
+          onOutlineClick={scrollToHeading}
+          onResize={resizeSidebar}
+        />
+      )}
       <main className="main-pane">
         <Toolbar
           activePath={activePath}
@@ -391,6 +404,7 @@ export default function App() {
           theme={theme}
           resolvedTheme={resolvedTheme}
           onCycleTheme={cycleTheme}
+          onToggleSidebar={toggleSidebar}
         />
         <ContentView
           html={html}
