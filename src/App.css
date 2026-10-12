@@ -1,6 +1,5 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
-/* ====== 主题变量 ====== */
 :root {
   color-scheme: light;
 
@@ -22,7 +21,6 @@
   --scrollbar-thumb: #c1c1c1;
   --scrollbar-thumb-hover: #a8a8a8;
 
-  /* highlight.js 令牌配色（GitHub 浅色） */
   --hljs-keyword: #d73a49;
   --hljs-entity: #6f42c1;
   --hljs-constant: #005cc5;
@@ -60,7 +58,6 @@
   --scrollbar-thumb: #484f58;
   --scrollbar-thumb-hover: #6e7681;
 
-  /* highlight.js 令牌配色（GitHub 深色） */
   --hljs-keyword: #ff7b72;
   --hljs-entity: #d2a8ff;
   --hljs-constant: #79c0ff;
@@ -93,7 +90,6 @@ html, body, #root {
   overflow: hidden;
 }
 
-/* Sidebar */
 .sidebar {
   background: var(--bg-alt);
   border-right: 1px solid var(--border);
@@ -176,7 +172,6 @@ html, body, #root {
   cursor: default;
 }
 
-/* Main pane + toolbar */
 .main-pane {
   display: flex;
   flex-direction: column;
@@ -271,7 +266,6 @@ button.icon-btn:hover:not(:disabled) {
 
 button.icon-btn:disabled { opacity: 0.4; cursor: default; }
 
-/* 搜索高亮 */
 .search-hit {
   background: var(--mark-bg);
   padding: 0;
@@ -280,7 +274,6 @@ button.icon-btn:disabled { opacity: 0.4; cursor: default; }
 
 .search-hit.current { background: var(--mark-current-bg); }
 
-/* Content */
 .content {
   flex: 1;
   min-height: 0;
@@ -359,7 +352,6 @@ button.icon-btn:disabled { opacity: 0.4; cursor: default; }
   line-height: 1.5;
 }
 
-/* 代码块：语言标签 + 复制按钮 */
 .code-block {
   position: relative;
   margin: 1em 0;
@@ -401,7 +393,6 @@ button.icon-btn:disabled { opacity: 0.4; cursor: default; }
 .copy-btn:hover { background: var(--bg-hover); }
 .copy-btn.copied { color: var(--accent); }
 
-/* highlight.js 令牌着色（值随主题变量切换） */
 .hljs-doctag,
 .hljs-keyword,
 .hljs-meta .hljs-keyword,
@@ -503,7 +494,6 @@ button.icon-btn:disabled { opacity: 0.4; cursor: default; }
   margin: 1.5em 0;
 }
 
-/* PlantUML / Mermaid 图表容器 */
 .plantuml-container,
 .mermaid-container {
   margin: 1.2em 0;
@@ -537,7 +527,6 @@ button.icon-btn:disabled { opacity: 0.4; cursor: default; }
   border-radius: 4px;
 }
 
-/* Placeholder */
 .placeholder {
   color: var(--fg-subtle);
   text-align: center;
@@ -557,13 +546,11 @@ button.icon-btn:disabled { opacity: 0.4; cursor: default; }
   opacity: 0.8;
 }
 
-/* 键盘焦点 */
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 
-/* Scrollbars */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 5px; }

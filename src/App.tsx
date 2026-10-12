@@ -34,7 +34,6 @@ function loadFontSize(): number {
   return v >= MIN_FONT && v <= MAX_FONT ? v : 15;
 }
 
-// ====== 创建 markdown-it 实例 + PlantUML 插件 ======
 function createMd() {
   const md = new MarkdownIt({
     html: true,
@@ -49,7 +48,6 @@ function createMd() {
     },
   });
 
-  // 图表插件（PlantUML / Mermaid）
   const defaultFence = md.renderer.rules.fence!;
   md.renderer.rules.fence = (tokens, idx, options, env, self) => {
     const token = tokens[idx];
@@ -77,9 +75,6 @@ function createMd() {
 
 const md = createMd();
 
-// ====== 图表渲染调度（PlantUML / Mermaid）======
-// viz-global.js（Graphviz 布局引擎）必须以普通 <script> 注入，引擎经全局 Viz 使用；
-// 用 ?raw 取回源码、以 Blob URL 作为 classic script 加载，dev 与打包构建行为一致
 let vizReady: Promise<void> | null = null;
 function ensureViz(): Promise<void> {
   if (!vizReady) {
@@ -104,7 +99,6 @@ function ensureViz(): Promise<void> {
   return vizReady;
 }
 
-// 引擎内部状态共享，多图必须串行渲染：等上一张写入结果后再渲染下一张
 let renderChain: Promise<void> = Promise.resolve();
 
 function renderPlantUmlBlock(block: HTMLElement, source: string, dark: boolean): Promise<void> {
@@ -189,7 +183,6 @@ function slugify(text: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
-// ====== App 组件 ======
 export default function App() {
   const [homeDir, setHomeDir] = useState("");
   const [currentPath, setCurrentPath] = useState("");
@@ -219,7 +212,6 @@ export default function App() {
   const resolvedTheme: "light" | "dark" =
     theme === "system" ? (systemDark ? "dark" : "light") : theme;
 
-  // 跟随系统主题
   useEffect(() => {
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     const onChange = (e: MediaQueryListEvent) => setSystemDark(e.matches);
@@ -227,19 +219,16 @@ export default function App() {
     return () => mq.removeEventListener("change", onChange);
   }, []);
 
-  // 应用并持久化主题
   useEffect(() => {
     document.documentElement.dataset.theme = resolvedTheme;
     localStorage.setItem(THEME_KEY, theme);
   }, [theme, resolvedTheme]);
 
-  // 应用并持久化正文字号
   useEffect(() => {
     document.documentElement.style.setProperty("--content-font-size", `${fontSize}px`);
     localStorage.setItem(FONT_KEY, String(fontSize));
   }, [fontSize]);
 
-  // 初始化：获取 home 目录
   useEffect(() => {
     invoke<string>("get_home_dir")
       .then((home) => {
@@ -249,7 +238,6 @@ export default function App() {
       .catch((e) => setError(String(e)));
   }, []);
 
-  // Ctrl/Cmd+F 聚焦搜索框
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
@@ -262,7 +250,6 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  // 加载目录中的 .md 文件
   const loadDir = useCallback(async (dir: string) => {
     setCurrentPath(dir);
     setError(null);
@@ -278,12 +265,10 @@ export default function App() {
     }
   }, []);
 
-  // currentPath 变化时加载
   useEffect(() => {
     if (currentPath) loadDir(currentPath);
   }, [currentPath, loadDir]);
 
-  // 打开文件
   const openFile = useCallback(async (file: MdFile) => {
     setQuery("");
     setMatchCount(0);
@@ -303,7 +288,6 @@ export default function App() {
     }
   }, []);
 
-  // Markdown 渲染完成后：重置滚动、生成标题锚点、表格包裹、代码块增强、大纲与滚动高亮
   useEffect(() => {
     const root = contentRef.current;
     if (!root) return;
@@ -313,7 +297,6 @@ export default function App() {
 
     const headings = Array.from(root.querySelectorAll<HTMLElement>("h1, h2, h3, h4, h5, h6"));
 
-    // 生成 slug 锚点（去重）
     const used = new Map<string, number>();
     for (const h of headings) {
       const base = slugify(h.textContent || "") || "section";
@@ -322,7 +305,6 @@ export default function App() {
       h.id = n === 0 ? base : `${base}-${n + 1}`;
     }
 
-    // 宽表格横向滚动包裹
     root.querySelectorAll("table").forEach((table) => {
       if (table.parentElement?.classList.contains("table-wrap")) return;
       const wrap = document.createElement("div");
@@ -331,7 +313,6 @@ export default function App() {
       wrap.appendChild(table);
     });
 
-    // 代码块：语言标签 + 复制按钮
     root.querySelectorAll<HTMLElement>("pre > code").forEach((code) => {
       const pre = code.parentElement as HTMLElement;
       if (pre.parentElement?.classList.contains("code-block")) return;
@@ -379,7 +360,6 @@ export default function App() {
       }))
     );
 
-    // 滚动高亮当前标题
     const visible = new Map<Element, boolean>();
     const observer = new IntersectionObserver(
       (entries) => {
@@ -394,7 +374,6 @@ export default function App() {
     return () => observer.disconnect();
   }, [html]);
 
-  // Markdown 渲染完成后，渲染 PlantUML / Mermaid 图表（先确保布局引擎就绪，且全局串行）
   useEffect(() => {
     const root = contentRef.current;
     if (!root) return;
@@ -435,7 +414,6 @@ export default function App() {
     };
   }, [html, resolvedTheme]);
 
-  // 点击大纲项滚动到对应标题
   const scrollToHeading = (id: string) => {
     const el = document.getElementById(id);
     if (el && contentRef.current?.contains(el)) {
@@ -443,7 +421,6 @@ export default function App() {
     }
   };
 
-  // 正文链接：内部锚点平滑滚动，外部链接用系统浏览器打开
   const handleContentClick = (e: MouseEvent) => {
     const a = (e.target as HTMLElement).closest("a");
     if (!a) return;
@@ -456,7 +433,6 @@ export default function App() {
     }
   };
 
-  // ====== 搜索定位 ======
   const clearMarks = useCallback(() => {
     contentRef.current?.querySelectorAll("mark.search-hit").forEach((mark) => {
       const parent = mark.parentNode;
@@ -533,17 +509,14 @@ export default function App() {
     if (total) setCurrentMark((currentMatch - 1 + total) % total);
   };
 
-  // 回到 home
   const goHome = useCallback(() => {
     if (homeDir) setCurrentPath(homeDir);
   }, [homeDir]);
 
-  // 刷新当前目录
   const refreshDir = () => {
     if (currentPath) loadDir(currentPath);
   };
 
-  // 循环切换主题：亮色 → 暗色 → 跟随系统
   const cycleTheme = () => {
     setTheme((t) => (t === "light" ? "dark" : t === "dark" ? "system" : "light"));
   };
