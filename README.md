@@ -18,7 +18,7 @@ Open a folder, pick a `.md` file, and read it with rendered diagrams, syntax-hig
 - Diagram rendering in fenced code blocks:
   - `mermaid` — rendered with Mermaid 12 (dark/light theme aware)
   - `plantuml` — rendered with `@plantuml/core`, loading `viz-global.js` on demand
-- Anchor links (`#...`) scroll inside the document; external links (`http(s)`, `mailto`, `tel`) open via the system opener
+- Anchor links (`#...`) scroll inside the document; relative `.md` links open the target file in the app; external links (`http(s)`, `mailto`, `tel`) open via the system opener
 - UI localized in English, Simplified Chinese and Traditional Chinese, auto-detected from the system language
 - The window title shows the file currently open
 
@@ -77,4 +77,4 @@ src-tauri/
 | --- | --- |
 | `list_md_files(dir)` | Lists `.md` / `.markdown` files directly in `dir`, sorted case-insensitively by name |
 | `read_md_file(path)` | Reads a file as UTF-8 text |
-| `get_home_dir()` | Returns the default start directory: `Documents` under the user home (`%USERPROFILE%` on Windows, `$HOME` elsewhere) |
+| `get_home_dir()` | Returns the default start directory: the user's Documents folder (via the platform's known-folder API), falling back to the home directory |

@@ -36,7 +36,7 @@ fn list_md_files(dir: String) -> Result<Vec<MdFile>, String> {
             }
         }
     }
-    files.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    files.sort_by_cached_key(|f| f.name.to_lowercase());
     Ok(files)
 }
 
@@ -46,12 +46,16 @@ fn read_md_file(path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn get_home_dir() -> Result<String, String> {
-    #[cfg(target_os = "windows")]
-    let home = std::env::var("USERPROFILE").map_err(|e| e.to_string())?;
-    #[cfg(not(target_os = "windows"))]
-    let home = std::env::var("HOME").map_err(|e| e.to_string())?;
-    Ok(PathBuf::from(home).join("Documents").to_string_lossy().to_string())
+fn get_home_dir(app: tauri::AppHandle) -> Result<String, String> {
+    use tauri::Manager;
+    let resolver = app.path();
+    let dir = resolver
+        .document_dir()
+        .ok()
+        .filter(|d| d.is_dir())
+        .or_else(|| resolver.home_dir().ok())
+        .ok_or_else(|| "user_home_not_found".to_string())?;
+    Ok(dir.to_string_lossy().to_string())
 }
 
 #[cfg(windows)]

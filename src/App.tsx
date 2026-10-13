@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, type MouseEvent } from "react
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { md, renderDiagrams, slugify } from "./markdown";
+import { renderMarkdown, renderDiagrams, slugify } from "./markdown";
 import { t } from "./i18n";
 import type { MdFile, OutlineItem, ThemeMode } from "./types";
 import Sidebar from "./components/Sidebar";
@@ -70,6 +70,7 @@ export default function App() {
   const marksRef = useRef<HTMLElement[]>([]);
   const searchTimerRef = useRef<number | undefined>(undefined);
   const openSeqRef = useRef(0);
+  const filesRef = useRef<MdFile[]>([]);
   const themeReadyRef = useRef(false);
 
   const resolvedTheme: "light" | "dark" =
@@ -144,6 +145,10 @@ export default function App() {
     if (currentPath) loadDir(currentPath);
   }, [currentPath, loadDir]);
 
+  useEffect(() => {
+    filesRef.current = files;
+  }, [files]);
+
   const openFile = useCallback(async (file: MdFile) => {
     const seq = ++openSeqRef.current;
     cancelPendingSearch();
@@ -155,12 +160,13 @@ export default function App() {
     try {
       const content = await invoke<string>("read_md_file", { path: file.path });
       if (seq !== openSeqRef.current) return;
-      setHtml(md.render(content));
+      setHtml(renderMarkdown(content));
       setActivePath(file.path);
       setError(null);
     } catch (e) {
       if (seq !== openSeqRef.current) return;
       setError(String(e));
+      setActivePath(file.path);
       setHtml("");
     } finally {
       if (seq === openSeqRef.current) setLoadingDoc(false);
@@ -173,7 +179,7 @@ export default function App() {
       const path = event.payload.paths.find((p) => /\.(md|markdown)$/i.test(p));
       if (!path) return;
       const file = { name: path.split(/[\\/]/).pop() ?? path, path };
-      if (!files.some((f) => f.path === path)) {
+      if (!filesRef.current.some((f) => f.path === path)) {
         setDragHistory((h) => [file, ...h.filter((f) => f.path !== path)]);
       }
       openFile(file);
@@ -181,7 +187,7 @@ export default function App() {
     return () => {
       unlisten.then((f) => f());
     };
-  }, [openFile, files]);
+  }, [openFile]);
 
   useEffect(() => {
     const root = contentRef.current;
@@ -291,6 +297,19 @@ export default function App() {
       scrollToHeading(decodeURIComponent(href.slice(1)));
     } else if (/^(?:https?|mailto|tel):/i.test(href)) {
       openUrl(href).catch((err) => console.error(err));
+    } else if (activePath) {
+      const rel = href.split("#")[0];
+      if (/\.(?:md|markdown)$/i.test(rel)) {
+        let name: string;
+        try {
+          name = decodeURIComponent(rel);
+        } catch {
+          name = rel;
+        }
+        const dir = activePath.replace(/[\\/][^\\/]*$/, "");
+        const path = `${dir}/${name}`;
+        openFile({ name: path.split(/[\\/]/).pop() ?? name, path });
+      }
     }
   };
 

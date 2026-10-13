@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useState, type KeyboardEvent, type ReactNode } from "react";
 import type { MdFile, OutlineItem } from "../types";
 import { t } from "../i18n";
 
@@ -19,6 +19,13 @@ interface SidebarProps {
   onOpenFile: (file: MdFile) => void;
   onOutlineClick: (id: string) => void;
   onResize: (width: number) => void;
+}
+
+function activate(e: KeyboardEvent, run: () => void) {
+  if (e.key === "Enter" || e.key === " ") {
+    e.preventDefault();
+    run();
+  }
 }
 
 function highlightText(text: string, query: string) {
@@ -153,7 +160,10 @@ export default function Sidebar({
                 key={f.path}
                 className={f.path === activePath ? "active" : ""}
                 title={f.path}
+                role="button"
+                tabIndex={0}
                 onClick={() => onOpenFile(f)}
+                onKeyDown={(e) => activate(e, () => onOpenFile(f))}
               >
                 <svg
                   className="file-icon"
@@ -209,7 +219,10 @@ export default function Sidebar({
                   key={f.path}
                   className={f.path === activePath ? "active" : ""}
                   title={f.path}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => onOpenFile(f)}
+                  onKeyDown={(e) => activate(e, () => onOpenFile(f))}
                 >
                   <svg
                     className="file-icon"
@@ -253,7 +266,10 @@ export default function Sidebar({
                 className={h.id === activeId ? "active" : ""}
                 style={{ paddingLeft: 14 + (h.level - 1) * 12 }}
                 title={h.text}
+                role="button"
+                tabIndex={0}
                 onClick={() => onOutlineClick(h.id)}
+                onKeyDown={(e) => activate(e, () => onOutlineClick(h.id))}
               >
                 {q ? highlightText(h.text, q) : h.text}
               </li>

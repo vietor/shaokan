@@ -1,5 +1,6 @@
 import MarkdownIt from "markdown-it";
-import hljs from "highlight.js";
+import DOMPurify from "dompurify";
+import hljs from "highlight.js/lib/common";
 import { t } from "./i18n";
 
 function createMd() {
@@ -23,16 +24,16 @@ function createMd() {
 
     if (info === "plantuml") {
       const id = `plantuml-${Math.random().toString(36).slice(2, 10)}`;
-      const escaped = escapeHtml(token.content);
+      const encoded = encodeURIComponent(token.content);
       const loading = token.content.trim() ? `<div class="plantuml-loading">${t("rendering")}</div>` : "";
-      return `<div class="plantuml-container" id="${id}" data-plantuml-source="${escaped}">${loading}</div>`;
+      return `<div class="plantuml-container" id="${id}" data-plantuml-source="${encoded}">${loading}</div>`;
     }
 
     if (info === "mermaid") {
       const id = `mermaid-${Math.random().toString(36).slice(2, 10)}`;
-      const escaped = escapeHtml(token.content);
+      const encoded = encodeURIComponent(token.content);
       const loading = token.content.trim() ? `<div class="mermaid-loading">${t("rendering")}</div>` : "";
-      return `<div class="mermaid-container" id="${id}" data-mermaid-source="${escaped}">${loading}</div>`;
+      return `<div class="mermaid-container" id="${id}" data-mermaid-source="${encoded}">${loading}</div>`;
     }
 
     return defaultFence(tokens, idx, options, env, self);
@@ -42,6 +43,10 @@ function createMd() {
 }
 
 export const md = createMd();
+
+export function renderMarkdown(source: string): string {
+  return DOMPurify.sanitize(md.render(source));
+}
 
 let vizReady: Promise<void> | null = null;
 function loadViz(): Promise<void> {
@@ -113,7 +118,7 @@ function renderPlantUmlBlock(block: HTMLElement, source: string, dark: boolean, 
           resolve();
         };
         const observer = new MutationObserver(() => {
-          if (block.querySelector("svg") || (block.textContent || "").trim()) finish();
+          if (block.querySelector("svg")) finish();
         });
         const timer = setTimeout(() => {
           finish();
@@ -129,6 +134,7 @@ function renderPlantUmlBlock(block: HTMLElement, source: string, dark: boolean, 
               finish();
               return;
             }
+            block.innerHTML = "";
             render(source.split("\n"), block.id, { dark });
           })
           .catch((e) => {
@@ -203,12 +209,6 @@ function escapeHtml(str: string): string {
     .replace(/>/g, "&gt;");
 }
 
-function unescapeHtml(str: string): string {
-  const txt = document.createElement("textarea");
-  txt.innerHTML = str;
-  return txt.value;
-}
-
 export function slugify(text: string): string {
   return text
     .trim()
@@ -232,13 +232,13 @@ export function renderDiagrams(root: HTMLElement, dark: boolean): () => void {
       if (cancelled || epoch !== renderEpoch) return;
       if (block.classList.contains("plantuml-container")) {
         const source = block.dataset.plantumlSource
-          ? unescapeHtml(block.dataset.plantumlSource)
+          ? decodeURIComponent(block.dataset.plantumlSource)
           : "";
         if (!source.trim()) continue;
         await renderPlantUmlBlock(block, source, dark, epoch);
       } else {
         const source = block.dataset.mermaidSource
-          ? unescapeHtml(block.dataset.mermaidSource)
+          ? decodeURIComponent(block.dataset.mermaidSource)
           : "";
         if (!source.trim()) continue;
         await renderMermaidBlock(block, source, dark, epoch);
