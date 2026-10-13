@@ -150,6 +150,20 @@ export default function Sidebar({
               title={f.path}
               onClick={() => onOpenFile(f)}
             >
+              <svg
+                className="file-icon"
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <path d="M14 2v6h6" />
+              </svg>
               {f.name}
             </li>
           ))}
@@ -172,6 +186,7 @@ export default function Sidebar({
             {shown.map((h) => (
               <li
                 key={h.id}
+                data-level={h.level}
                 className={h.id === activeId ? "active" : ""}
                 style={{ paddingLeft: 14 + (h.level - 1) * 12 }}
                 title={h.text}

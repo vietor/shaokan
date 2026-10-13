@@ -67,6 +67,7 @@ export default function App() {
   const searchRef = useRef<HTMLInputElement>(null);
   const marksRef = useRef<HTMLElement[]>([]);
   const openSeqRef = useRef(0);
+  const themeReadyRef = useRef(false);
 
   const resolvedTheme: "light" | "dark" =
     theme === "system" ? (systemDark ? "dark" : "light") : theme;
@@ -81,6 +82,11 @@ export default function App() {
   useEffect(() => {
     document.documentElement.dataset.theme = resolvedTheme;
     localStorage.setItem(THEME_KEY, theme);
+    if (themeReadyRef.current) {
+      document.documentElement.classList.add("theme-transition");
+      setTimeout(() => document.documentElement.classList.remove("theme-transition"), 300);
+    }
+    themeReadyRef.current = true;
   }, [theme, resolvedTheme]);
 
   useEffect(() => {
@@ -415,6 +421,7 @@ export default function App() {
           html={html}
           error={error}
           loadingDoc={loadingDoc}
+          activePath={activePath}
           contentRef={contentRef}
           scrollRef={scrollRef}
           onContentClick={handleContentClick}

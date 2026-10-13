@@ -45,6 +45,7 @@ export default function Toolbar({
 
   return (
     <div className="toolbar">
+      {loadingDoc && <span className="loading-bar" />}
       <button className="icon-btn" onClick={onToggleSidebar} title={t("toggleSidebar")}>
         <svg
           width="14"
@@ -60,32 +61,69 @@ export default function Toolbar({
           <path d="M9 3v18" />
         </svg>
       </button>
-      {loadingDoc && <span className="loading-tag">{t("loading")}</span>}
-      <input
-        ref={searchRef}
-        className="search-input"
-        type="search"
-        placeholder={t("searchPlaceholder")}
-        value={query}
-        onChange={(e) => onQueryChange(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            if (e.shiftKey) onPrev();
-            else onNext();
-          } else if (e.key === "Escape") {
-            onQueryChange("");
-          }
-        }}
-      />
-      <span className="match-count">
-        {matchCount > 0 ? `${currentMatch + 1}/${matchCount}` : query ? "0/0" : ""}
-      </span>
-      <button onClick={onPrev} disabled={matchCount === 0} title={t("prev")}>
-        ‹
-      </button>
-      <button onClick={onNext} disabled={matchCount === 0} title={t("next")}>
-        ›
-      </button>
+      <div className="search-box">
+        <svg
+          width="13"
+          height="13"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <circle cx="11" cy="11" r="7" />
+          <path d="m21 21-4.3-4.3" />
+        </svg>
+        <input
+          ref={searchRef}
+          className="search-input"
+          type="search"
+          placeholder={t("searchPlaceholder")}
+          value={query}
+          onChange={(e) => onQueryChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              if (e.shiftKey) onPrev();
+              else onNext();
+            } else if (e.key === "Escape") {
+              onQueryChange("");
+            }
+          }}
+        />
+        <span className="match-count">
+          {matchCount > 0 ? `${currentMatch + 1}/${matchCount}` : query ? "0/0" : ""}
+        </span>
+        <button onClick={onPrev} disabled={matchCount === 0} title={t("prev")}>
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="m15 18-6-6 6-6" />
+          </svg>
+        </button>
+        <button onClick={onNext} disabled={matchCount === 0} title={t("next")}>
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="m9 18 6-6-6-6" />
+          </svg>
+        </button>
+      </div>
       <span className="toolbar-divider" />
       <button
         onClick={onDecreaseFont}
@@ -129,7 +167,21 @@ export default function Toolbar({
         </svg>
       </button>
       <button className="icon-btn" onClick={onCycleTheme} title={t("themeTitle", { theme: themeLabel })}>
-        {resolvedTheme === "dark" ? (
+        {theme === "system" ? (
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <rect x="2" y="3" width="20" height="14" rx="2" />
+            <path d="M8 21h8M12 17v4" />
+          </svg>
+        ) : resolvedTheme === "dark" ? (
           <svg
             width="14"
             height="14"
