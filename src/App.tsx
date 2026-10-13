@@ -43,6 +43,7 @@ export default function App() {
   const [homeDir, setHomeDir] = useState("");
   const [currentPath, setCurrentPath] = useState("");
   const [files, setFiles] = useState<MdFile[]>([]);
+  const [dragHistory, setDragHistory] = useState<MdFile[]>([]);
   const [activePath, setActivePath] = useState<string | null>(null);
   const [html, setHtml] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
@@ -162,6 +163,22 @@ export default function App() {
       if (seq === openSeqRef.current) setLoadingDoc(false);
     }
   }, []);
+
+  useEffect(() => {
+    const unlisten = getCurrentWindow().onDragDropEvent((event) => {
+      if (event.payload.type !== "drop") return;
+      const path = event.payload.paths.find((p) => /\.(md|markdown)$/i.test(p));
+      if (!path) return;
+      const file = { name: path.split(/[\\/]/).pop() ?? path, path };
+      if (!files.some((f) => f.path === path)) {
+        setDragHistory((h) => [file, ...h.filter((f) => f.path !== path)]);
+      }
+      openFile(file);
+    });
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, [openFile, files]);
 
   useEffect(() => {
     const root = contentRef.current;
@@ -373,6 +390,18 @@ export default function App() {
     if (currentPath) loadDir(currentPath);
   };
 
+  const clearDragHistory = () => {
+    if (activePath && dragHistory.some((f) => f.path === activePath)) {
+      setQuery("");
+      setMatchCount(0);
+      setCurrentMatch(-1);
+      marksRef.current = [];
+      setHtml("");
+      setActivePath(null);
+    }
+    setDragHistory([]);
+  };
+
   const cycleTheme = () => {
     setTheme((t) => (t === "light" ? "dark" : t === "dark" ? "system" : "light"));
   };
@@ -384,12 +413,14 @@ export default function App() {
           currentPath={currentPath}
           loadingDir={loadingDir}
           files={files}
+          dragHistory={dragHistory}
           activePath={activePath}
           tab={tab}
           outline={outline}
           activeId={activeId}
           hasDoc={!!html}
           onRefresh={refreshDir}
+          onClearDragHistory={clearDragHistory}
           onHome={goHome}
           onTabChange={setTab}
           onOpenFile={openFile}

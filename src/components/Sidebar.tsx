@@ -6,12 +6,14 @@ interface SidebarProps {
   currentPath: string;
   loadingDir: boolean;
   files: MdFile[];
+  dragHistory: MdFile[];
   activePath: string | null;
   tab: "files" | "outline";
   outline: OutlineItem[];
   activeId: string | null;
   hasDoc: boolean;
   onRefresh: () => void;
+  onClearDragHistory: () => void;
   onHome: () => void;
   onTabChange: (tab: "files" | "outline") => void;
   onOpenFile: (file: MdFile) => void;
@@ -43,12 +45,14 @@ export default function Sidebar({
   currentPath,
   loadingDir,
   files,
+  dragHistory,
   activePath,
   tab,
   outline,
   activeId,
   hasDoc,
   onRefresh,
+  onClearDragHistory,
   onHome,
   onTabChange,
   onOpenFile,
@@ -138,36 +142,95 @@ export default function Sidebar({
         </button>
       </div>
       {tab === "files" ? (
-        <ul className="file-list">
-          {loadingDir && <li className="empty">{t("loading")}</li>}
-          {!loadingDir && files.length === 0 && (
-            <li className="empty">{t("emptyDir")}</li>
-          )}
-          {files.map((f) => (
-            <li
-              key={f.path}
-              className={f.path === activePath ? "active" : ""}
-              title={f.path}
-              onClick={() => onOpenFile(f)}
-            >
-              <svg
-                className="file-icon"
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
+        <div className="files-pane">
+          <ul className="file-list">
+            {loadingDir && <li className="empty">{t("loading")}</li>}
+            {!loadingDir && files.length === 0 && (
+              <li className="empty">{t("emptyDir")}</li>
+            )}
+            {files.map((f) => (
+              <li
+                key={f.path}
+                className={f.path === activePath ? "active" : ""}
+                title={f.path}
+                onClick={() => onOpenFile(f)}
               >
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                <path d="M14 2v6h6" />
-              </svg>
-              {f.name}
-            </li>
-          ))}
-        </ul>
+                <svg
+                  className="file-icon"
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <path d="M14 2v6h6" />
+                </svg>
+                {f.name}
+              </li>
+            ))}
+          </ul>
+          <div className="drag-history">
+            <div className="drag-history-header">
+              <span>{t("dragHistory")}</span>
+              <button
+                className="icon-btn"
+                onClick={onClearDragHistory}
+                title={t("clearDragHistory")}
+                aria-label={t("clearDragHistory")}
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M3 6h18" />
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+                  <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                  <path d="M10 11v6" />
+                  <path d="M14 11v6" />
+                </svg>
+              </button>
+            </div>
+            <ul className="file-list">
+              {dragHistory.length === 0 && (
+                <li className="empty">{t("emptyDragHistory")}</li>
+              )}
+              {dragHistory.map((f) => (
+                <li
+                  key={f.path}
+                  className={f.path === activePath ? "active" : ""}
+                  title={f.path}
+                  onClick={() => onOpenFile(f)}
+                >
+                  <svg
+                    className="file-icon"
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <path d="M14 2v6h6" />
+                  </svg>
+                  {f.name}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
       ) : (
         <>
           <input
