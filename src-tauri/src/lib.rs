@@ -8,7 +8,7 @@ struct MdFile {
     path: String,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn list_md_files(dir: String) -> Result<Vec<MdFile>, String> {
     let path = PathBuf::from(&dir);
     if !path.exists() {
@@ -40,7 +40,7 @@ fn list_md_files(dir: String) -> Result<Vec<MdFile>, String> {
     Ok(files)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn read_md_file(path: String) -> Result<String, String> {
     fs::read_to_string(&path).map_err(|e| e.to_string())
 }

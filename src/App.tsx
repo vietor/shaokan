@@ -17,6 +17,7 @@ const DEFAULT_FONT = 15;
 const MAX_FONT = 22;
 const MIN_SIDEBAR_WIDTH = 280;
 const MAX_SIDEBAR_WIDTH = MIN_SIDEBAR_WIDTH * 2;
+const SEARCH_DEBOUNCE_MS = 150;
 
 function loadTheme(): ThemeMode {
   const v = localStorage.getItem(THEME_KEY);
@@ -67,6 +68,7 @@ export default function App() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const marksRef = useRef<HTMLElement[]>([]);
+  const searchTimerRef = useRef<number | undefined>(undefined);
   const openSeqRef = useRef(0);
   const themeReadyRef = useRef(false);
 
@@ -144,6 +146,7 @@ export default function App() {
 
   const openFile = useCallback(async (file: MdFile) => {
     const seq = ++openSeqRef.current;
+    cancelPendingSearch();
     setQuery("");
     setMatchCount(0);
     setCurrentMatch(-1);
@@ -357,19 +360,43 @@ export default function App() {
     [clearMarks, setCurrentMark]
   );
 
+  const cancelPendingSearch = () => {
+    if (searchTimerRef.current !== undefined) {
+      clearTimeout(searchTimerRef.current);
+      searchTimerRef.current = undefined;
+    }
+  };
+
+  const flushPendingSearch = () => {
+    if (searchTimerRef.current === undefined) return false;
+    cancelPendingSearch();
+    runSearch(query);
+    return true;
+  };
+
   const goNext = () => {
+    if (flushPendingSearch()) return;
     const total = marksRef.current.length;
     if (total) setCurrentMark((currentMatch + 1) % total);
   };
 
   const goPrev = () => {
+    if (flushPendingSearch()) return;
     const total = marksRef.current.length;
     if (total) setCurrentMark((currentMatch - 1 + total) % total);
   };
 
   const handleQueryChange = (q: string) => {
     setQuery(q);
-    runSearch(q);
+    cancelPendingSearch();
+    if (!q) {
+      runSearch("");
+      return;
+    }
+    searchTimerRef.current = setTimeout(() => {
+      searchTimerRef.current = undefined;
+      runSearch(q);
+    }, SEARCH_DEBOUNCE_MS);
   };
 
   const decreaseFont = () => setFontSize((v) => Math.max(MIN_FONT, v - 1));
@@ -386,19 +413,24 @@ export default function App() {
     if (homeDir) setCurrentPath(homeDir);
   }, [homeDir]);
 
+  const clearDoc = () => {
+    cancelPendingSearch();
+    setQuery("");
+    setMatchCount(0);
+    setCurrentMatch(-1);
+    marksRef.current = [];
+    setHtml("");
+    setActivePath(null);
+  };
+
   const refreshDir = () => {
-    if (currentPath) loadDir(currentPath);
+    if (!currentPath) return;
+    clearDoc();
+    loadDir(currentPath);
   };
 
   const clearDragHistory = () => {
-    if (activePath && dragHistory.some((f) => f.path === activePath)) {
-      setQuery("");
-      setMatchCount(0);
-      setCurrentMatch(-1);
-      marksRef.current = [];
-      setHtml("");
-      setActivePath(null);
-    }
+    if (activePath && dragHistory.some((f) => f.path === activePath)) clearDoc();
     setDragHistory([]);
   };
 
