@@ -1,6 +1,7 @@
 import { useState, type KeyboardEvent, type ReactNode } from "react";
 import type { MdFile, OutlineItem } from "../types";
 import { t } from "../i18n";
+import { isNative } from "../native";
 
 interface SidebarProps {
   currentPath: string;
@@ -13,6 +14,7 @@ interface SidebarProps {
   activeId: string | null;
   hasDoc: boolean;
   onRefresh: () => void;
+  onOpenFolder: () => void;
   onClearDragHistory: () => void;
   onHome: () => void;
   onTabChange: (tab: "files" | "outline") => void;
@@ -59,6 +61,7 @@ export default function Sidebar({
   activeId,
   hasDoc,
   onRefresh,
+  onOpenFolder,
   onClearDragHistory,
   onHome,
   onTabChange,
@@ -93,6 +96,27 @@ export default function Sidebar({
         <div className="path-label" title={currentPath}>
           {currentPath || "~/"}
         </div>
+        {isNative && (
+          <button
+            className="icon-btn"
+            onClick={onOpenFolder}
+            title={t("openFolder")}
+            aria-label={t("openFolder")}
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+            </svg>
+          </button>
+        )}
         <button
           className="icon-btn"
           onClick={onRefresh}

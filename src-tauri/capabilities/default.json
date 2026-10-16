@@ -6,6 +6,10 @@
   "permissions": [
     "core:default",
     "core:window:allow-set-title",
-    "opener:default"
+    "opener:default",
+    "dialog:default",
+    "dialog:allow-open",
+    { "identifier": "fs:allow-watch", "allow": [{ "path": "**" }] },
+    { "identifier": "fs:allow-unwatch", "allow": [{ "path": "**" }] }
   ]
 }

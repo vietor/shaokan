@@ -605,6 +605,24 @@ button.icon-btn:disabled { opacity: 0.4; cursor: default; }
 .markdown-body ul, .markdown-body ol { margin: 0.8em 0; padding-left: 2em; }
 .markdown-body li { margin: 0.3em 0; }
 
+.markdown-body .task-list-item { list-style: none; }
+.markdown-body .task-list-item-checkbox {
+  margin: 0 0.4em 0.25em -1.35em;
+  vertical-align: middle;
+  accent-color: var(--accent);
+}
+
+.markdown-body .footnotes {
+  font-size: 0.9em;
+  color: var(--fg-muted);
+}
+
+.markdown-body .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px 0;
+}
+
 .table-wrap {
   overflow-x: auto;
   margin: 1em 0;

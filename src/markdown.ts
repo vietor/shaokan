@@ -1,51 +1,50 @@
-import MarkdownIt from "markdown-it";
 import DOMPurify from "dompurify";
-import hljs from "highlight.js/lib/common";
+import "katex/dist/katex.min.css";
 import { t } from "./i18n";
 
-function createMd() {
-  const md = new MarkdownIt({
-    html: true,
-    linkify: true,
-    breaks: false,
-    highlight: (str: string, lang: string): string => {
-      if (lang && lang.toLowerCase() === "plantuml") return "";
-      if (lang && hljs.getLanguage(lang)) {
-        return hljs.highlight(str, { language: lang }).value;
-      }
-      return "";
-    },
-  });
-
-  const defaultFence = md.renderer.rules.fence!;
-  md.renderer.rules.fence = (tokens, idx, options, env, self) => {
-    const token = tokens[idx];
-    const info = token.info.trim().toLowerCase();
-
-    if (info === "plantuml") {
-      const id = `plantuml-${Math.random().toString(36).slice(2, 10)}`;
-      const encoded = encodeURIComponent(token.content);
-      const loading = token.content.trim() ? `<div class="plantuml-loading">${t("rendering")}</div>` : "";
-      return `<div class="plantuml-container" id="${id}" data-plantuml-source="${encoded}">${loading}</div>`;
-    }
-
-    if (info === "mermaid") {
-      const id = `mermaid-${Math.random().toString(36).slice(2, 10)}`;
-      const encoded = encodeURIComponent(token.content);
-      const loading = token.content.trim() ? `<div class="mermaid-loading">${t("rendering")}</div>` : "";
-      return `<div class="mermaid-container" id="${id}" data-mermaid-source="${encoded}">${loading}</div>`;
-    }
-
-    return defaultFence(tokens, idx, options, env, self);
-  };
-
-  return md;
+function stripFrontmatter(source: string): string {
+  const match = source.match(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/);
+  return match ? source.slice(match[0].length) : source;
 }
 
-export const md = createMd();
+let renderSeq = 0;
+const renderJobs = new Map<
+  number,
+  { resolve: (html: string) => void; reject: (reason: unknown) => void }
+>();
+let renderWorker: Worker | undefined;
 
-export function renderMarkdown(source: string): string {
-  return DOMPurify.sanitize(md.render(source));
+function getWorker(): Worker {
+  if (!renderWorker) {
+    renderWorker = new Worker(new URL("./render-worker.ts", import.meta.url), {
+      type: "module",
+    });
+    renderWorker.onmessage = (e: MessageEvent<{ id: number; html?: string; error?: string }>) => {
+      const job = renderJobs.get(e.data.id);
+      if (!job) return;
+      renderJobs.delete(e.data.id);
+      if (e.data.error !== undefined) job.reject(e.data.error);
+      else job.resolve(e.data.html ?? "");
+    };
+    renderWorker.onerror = (e) => {
+      renderWorker = undefined;
+      renderJobs.forEach((job) => job.reject(e.message || "render worker failed"));
+      renderJobs.clear();
+    };
+  }
+  return renderWorker;
+}
+
+export function renderMarkdown(source: string): Promise<string> {
+  const worker = getWorker();
+  const id = ++renderSeq;
+  return new Promise((resolve, reject) => {
+    renderJobs.set(id, {
+      resolve: (html) => resolve(DOMPurify.sanitize(html)),
+      reject,
+    });
+    worker.postMessage({ id, source: stripFrontmatter(source) });
+  });
 }
 
 let vizReady: Promise<void> | null = null;
@@ -101,10 +100,20 @@ function cancelPendingRenders(): number {
   return renderEpoch;
 }
 
-let renderChain: Promise<void> = Promise.resolve();
+let plantUmlChain: Promise<void> = Promise.resolve();
+let mermaidChain: Promise<void> = Promise.resolve();
+
+const diagramCache = new WeakMap<HTMLElement, { light?: string; dark?: string }>();
+
+function cacheDiagram(block: HTMLElement, theme: "light" | "dark", html: string) {
+  const entry = diagramCache.get(block) ?? {};
+  entry[theme] = html;
+  diagramCache.set(block, entry);
+}
 
 function renderPlantUmlBlock(block: HTMLElement, source: string, dark: boolean, epoch: number): Promise<void> {
-  const task = renderChain.then(
+  const theme = dark ? "dark" : "light";
+  const task = plantUmlChain.then(
     () =>
       new Promise<void>((resolve) => {
         if (epoch !== renderEpoch) {
@@ -118,7 +127,10 @@ function renderPlantUmlBlock(block: HTMLElement, source: string, dark: boolean, 
           resolve();
         };
         const observer = new MutationObserver(() => {
-          if (block.querySelector("svg")) finish();
+          if (block.querySelector("svg")) {
+            cacheDiagram(block, theme, block.innerHTML);
+            finish();
+          }
         });
         const timer = setTimeout(() => {
           finish();
@@ -145,7 +157,7 @@ function renderPlantUmlBlock(block: HTMLElement, source: string, dark: boolean, 
           });
       })
   );
-  renderChain = task.catch(() => {});
+  plantUmlChain = task.catch(() => {});
   return task;
 }
 
@@ -165,21 +177,22 @@ function ensureMermaid(): Promise<typeof import("mermaid").default> {
 let mermaidTheme: string | null = null;
 
 function renderMermaidBlock(block: HTMLElement, source: string, dark: boolean, epoch: number): Promise<void> {
-  const task = renderChain.then(async () => {
+  const theme = dark ? "dark" : "light";
+  const task = mermaidChain.then(async () => {
     if (epoch !== renderEpoch) return;
     try {
       const mermaid = await ensureMermaid();
       if (epoch !== renderEpoch || !block.isConnected) return;
-      const theme = dark ? "dark" : "default";
-      if (mermaidTheme !== theme) {
+      const mermaidThemeName = dark ? "dark" : "default";
+      if (mermaidTheme !== mermaidThemeName) {
         mermaid.initialize({
           startOnLoad: false,
           securityLevel: "strict",
           suppressErrorRendering: true,
-          theme,
+          theme: mermaidThemeName,
           fontFamily: "inherit",
         });
-        mermaidTheme = theme;
+        mermaidTheme = mermaidThemeName;
       }
       const { svg } = await mermaid.render(`${block.id}-svg`, source);
       if (epoch !== renderEpoch || !block.isConnected) return;
@@ -191,13 +204,14 @@ function renderMermaidBlock(block: HTMLElement, source: string, dark: boolean, e
         svgEl.setAttribute("width", String(vb.width));
         svgEl.setAttribute("height", String(vb.height));
       }
+      cacheDiagram(block, theme, block.innerHTML);
     } catch (e) {
       if (epoch === renderEpoch && block.isConnected) {
         block.innerHTML = `<div class="mermaid-error">${t("mermaidFailed", { error: escapeHtml(String(e)) })}</div>`;
       }
     }
   });
-  renderChain = task.catch(() => {});
+  mermaidChain = task.catch(() => {});
   return task;
 }
 
@@ -221,32 +235,32 @@ export function slugify(text: string): string {
 
 export function renderDiagrams(root: HTMLElement, dark: boolean): () => void {
   const epoch = cancelPendingRenders();
+  const theme = dark ? "dark" : "light";
   const blocks = Array.from(
     root.querySelectorAll<HTMLElement>(".plantuml-container, .mermaid-container")
   );
   if (blocks.length === 0) return () => {};
-  let cancelled = false;
 
-  (async () => {
-    for (const block of blocks) {
-      if (cancelled || epoch !== renderEpoch) return;
-      if (block.classList.contains("plantuml-container")) {
-        const source = block.dataset.plantumlSource
-          ? decodeURIComponent(block.dataset.plantumlSource)
-          : "";
-        if (!source.trim()) continue;
-        await renderPlantUmlBlock(block, source, dark, epoch);
-      } else {
-        const source = block.dataset.mermaidSource
-          ? decodeURIComponent(block.dataset.mermaidSource)
-          : "";
-        if (!source.trim()) continue;
-        await renderMermaidBlock(block, source, dark, epoch);
-      }
+  for (const block of blocks) {
+    const cached = diagramCache.get(block)?.[theme];
+    if (cached !== undefined) {
+      block.innerHTML = cached;
+      continue;
     }
-  })();
+    if (block.classList.contains("plantuml-container")) {
+      const source = block.dataset.plantumlSource
+        ? decodeURIComponent(block.dataset.plantumlSource)
+        : "";
+      if (!source.trim()) continue;
+      renderPlantUmlBlock(block, source, dark, epoch);
+    } else {
+      const source = block.dataset.mermaidSource
+        ? decodeURIComponent(block.dataset.mermaidSource)
+        : "";
+      if (!source.trim()) continue;
+      renderMermaidBlock(block, source, dark, epoch);
+    }
+  }
 
-  return () => {
-    cancelled = true;
-  };
+  return () => {};
 }

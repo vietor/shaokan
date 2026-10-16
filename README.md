@@ -7,14 +7,18 @@ Open a folder, pick a `.md` file, and read it with rendered diagrams, syntax-hig
 ## Features
 
 - Browses `.md` / `.markdown` files in a directory (files only, non-recursive, sorted by name); starts in the user's `Documents` folder
+- Open-folder button (system folder picker) to browse any directory
 - Sidebar with two tabs:
   - **Files** — file list with active-file highlighting, directory refresh, and back-to-home
   - **Outline** — heading list that follows the current scroll position; can be filtered, keeping matching headings and their ancestors
 - Sidebar is resizable (280–560 px) and collapsible
+- The file list and the open document reload automatically when files change on disk; scroll position and search highlights are preserved
+- Images with relative paths resolve against the document's directory
 - In-document search (case-insensitive): `Ctrl+F` focuses the search box, `Enter` / `Shift+Enter` jump to the next / previous match, `Esc` clears. A `current/total` match counter is shown
 - Font size adjustment (12–22 px, default 15 px) with increase / decrease / reset, persisted in `localStorage`
 - Theme: light / dark / system, cycled from the toolbar and persisted; the system theme is tracked live, and the saved theme and font size are applied before first paint
 - Code blocks get a language label and a copy button; tables scroll horizontally when too wide
+- Task lists, footnotes and KaTeX math (`$...$` / `$$...$$`); YAML frontmatter is hidden
 - Diagram rendering in fenced code blocks:
   - `mermaid` — rendered with Mermaid 12 (dark/light theme aware)
   - `plantuml` — rendered with `@plantuml/core`, loading `viz-global.js` on demand
@@ -24,7 +28,7 @@ Open a folder, pick a `.md` file, and read it with rendered diagrams, syntax-hig
 
 ## Tech Stack
 
-- Tauri 2 (Rust backend) with `tauri-plugin-opener`
+- Tauri 2 (Rust backend) with `tauri-plugin-opener`, `tauri-plugin-dialog` and `tauri-plugin-fs`
 - React 19, TypeScript 5.8, Vite 7
 - markdown-it 15, highlight.js 11
 - Mermaid 12, @plantuml/core
@@ -43,6 +47,8 @@ pnpm tauri dev
 
 The Vite dev server runs on port 1420 (`strictPort`) and is watched by the Tauri app; `src-tauri` is excluded from Vite's file watching.
 
+For page-only development, run `pnpm dev` and open http://localhost:1420 in a browser (also works with `pnpm preview` on a built bundle). File listing and reading fall back to the sample documents in `dev-docs/`, which hot-reload on edit; any `.md` file can also be dropped onto the page to preview it.
+
 ## Build
 
 ```sh
@@ -58,7 +64,10 @@ index.html                     Entry HTML; applies the saved theme/font size bef
 src/
   main.tsx                     React entry point
   App.tsx                      Application state: directory, file, search, theme, layout
-  markdown.ts                  markdown-it configuration; Mermaid/PlantUML rendering; slugify
+  native.ts                    Tauri commands with browser fallbacks for page-only development
+  mdit.ts                      markdown-it instance and plugins (task lists, footnotes, KaTeX)
+  markdown.ts                  Off-thread rendering (Web Worker + DOMPurify); Mermaid/PlantUML rendering; slugify
+  render-worker.ts             Worker entry that runs markdown-it + highlight.js off the main thread
   i18n.ts                      Localization (en, zh-Hans, zh-Hant) and locale detection
   types.ts                     Shared types (MdFile, OutlineItem, ThemeMode)
   components/
@@ -76,5 +85,5 @@ src-tauri/
 | Command | Description |
 | --- | --- |
 | `list_md_files(dir)` | Lists `.md` / `.markdown` files directly in `dir`, sorted case-insensitively by name |
-| `read_md_file(path)` | Reads a file as UTF-8 text |
+| `read_md_file(path)` | Reads a file as text: UTF-8 first (BOM tolerated), falling back to GB18030 |
 | `get_home_dir()` | Returns the default start directory: the user's Documents folder (via the platform's known-folder API), falling back to the home directory |

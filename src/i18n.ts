@@ -18,6 +18,7 @@ const en = {
   themeSystem: "System",
   themeTitle: "Theme: {theme} (click to switch)",
   refreshDir: "Refresh directory",
+  openFolder: "Open folder",
   backHome: "Go to Home",
   filesTab: "Files",
   outlineTab: "Outline",
@@ -65,6 +66,7 @@ const messages: Record<Locale, Messages> = {
     themeSystem: "跟随系统",
     themeTitle: "主题：{theme}（点击切换）",
     refreshDir: "刷新目录",
+    openFolder: "打开目录",
     backHome: "回到 Home",
     filesTab: "目录",
     outlineTab: "大纲",
@@ -106,6 +108,7 @@ const messages: Record<Locale, Messages> = {
     themeSystem: "跟隨系統",
     themeTitle: "主題：{theme}（點擊切換）",
     refreshDir: "重新整理目錄",
+    openFolder: "開啟目錄",
     backHome: "回到 Home",
     filesTab: "目錄",
     outlineTab: "大綱",
@@ -147,7 +150,9 @@ function detectLocale(): Locale {
 
 const locale: Locale = detectLocale();
 
-document.documentElement.lang = locale;
+if (typeof document !== "undefined") {
+  document.documentElement.lang = locale;
+}
 
 export function t(key: MessageKey, params?: Record<string, string>): string {
   const message = messages[locale][key];

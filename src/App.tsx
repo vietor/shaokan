@@ -1,7 +1,17 @@
 import { useState, useEffect, useCallback, useRef, type MouseEvent } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import {
+  isNative,
+  getHomeDir,
+  listMdFiles,
+  readMdFile,
+  setWindowTitle,
+  openExternal,
+  onNativeFileDrop,
+  onWebFileDrop,
+  pickDirectory,
+  onDirChange,
+  localImageUrl,
+} from "./native";
 import { renderMarkdown, renderDiagrams, slugify } from "./markdown";
 import { t } from "./i18n";
 import type { MdFile, OutlineItem, ThemeMode } from "./types";
@@ -72,6 +82,9 @@ export default function App() {
   const openSeqRef = useRef(0);
   const filesRef = useRef<MdFile[]>([]);
   const themeReadyRef = useRef(false);
+  const activePathRef = useRef<string | null>(null);
+  const queryRef = useRef("");
+  const lastHtmlPathRef = useRef<string | null>(null);
 
   const resolvedTheme: "light" | "dark" =
     theme === "system" ? (systemDark ? "dark" : "light") : theme;
@@ -100,13 +113,11 @@ export default function App() {
 
   useEffect(() => {
     const name = activePath ? activePath.split(/[\\/]/).pop() : "";
-    getCurrentWindow()
-      .setTitle(name ? `${t("appTitle")} - ${name}` : t("appTitle"))
-      .catch(() => {});
+    setWindowTitle(name ? `${t("appTitle")} - ${name}` : t("appTitle"));
   }, [activePath]);
 
   useEffect(() => {
-    invoke<string>("get_home_dir")
+    getHomeDir()
       .then((home) => {
         setHomeDir(home);
         setCurrentPath(home);
@@ -131,7 +142,7 @@ export default function App() {
     setError(null);
     setLoadingDir(true);
     try {
-      const list = await invoke<MdFile[]>("list_md_files", { dir });
+      const list = await listMdFiles(dir);
       setFiles(list);
     } catch (e) {
       setFiles([]);
@@ -149,6 +160,10 @@ export default function App() {
     filesRef.current = files;
   }, [files]);
 
+  useEffect(() => {
+    activePathRef.current = activePath;
+  }, [activePath]);
+
   const openFile = useCallback(async (file: MdFile) => {
     const seq = ++openSeqRef.current;
     cancelPendingSearch();
@@ -158,9 +173,11 @@ export default function App() {
     marksRef.current = [];
     setLoadingDoc(true);
     try {
-      const content = await invoke<string>("read_md_file", { path: file.path });
+      const content = await readMdFile(file.path);
       if (seq !== openSeqRef.current) return;
-      setHtml(renderMarkdown(content));
+      const rendered = await renderMarkdown(content);
+      if (seq !== openSeqRef.current) return;
+      setHtml(rendered);
       setActivePath(file.path);
       setError(null);
     } catch (e) {
@@ -173,27 +190,72 @@ export default function App() {
     }
   }, []);
 
+  const reloadDoc = useCallback(async () => {
+    const path = activePathRef.current;
+    if (!path) return;
+    try {
+      const content = await readMdFile(path);
+      if (activePathRef.current !== path) return;
+      const rendered = await renderMarkdown(content);
+      if (activePathRef.current !== path) return;
+      setHtml(rendered);
+    } catch (e) {
+      setError(String(e));
+    }
+  }, []);
+
   useEffect(() => {
-    const unlisten = getCurrentWindow().onDragDropEvent((event) => {
-      if (event.payload.type !== "drop") return;
-      const path = event.payload.paths.find((p) => /\.(md|markdown)$/i.test(p));
-      if (!path) return;
-      const file = { name: path.split(/[\\/]/).pop() ?? path, path };
-      if (!filesRef.current.some((f) => f.path === path)) {
-        setDragHistory((h) => [file, ...h.filter((f) => f.path !== path)]);
+    const accept = (file: MdFile) => {
+      if (!filesRef.current.some((f) => f.path === file.path)) {
+        setDragHistory((h) => [file, ...h.filter((f) => f.path !== file.path)]);
       }
       openFile(file);
+    };
+    if (!isNative) {
+      return onWebFileDrop((f) => accept({ name: f.name, path: f.name }));
+    }
+    return onNativeFileDrop((path) =>
+      accept({ name: path.split(/[\\/]/).pop() ?? path, path })
+    );
+  }, [openFile]);
+
+  useEffect(() => {
+    if (!currentPath) return;
+    let cancelled = false;
+    const unlisten = onDirChange(currentPath, (paths) => {
+      if (cancelled) return;
+      if (paths.some((p) => /\.(md|markdown)$/i.test(p))) {
+        listMdFiles(currentPath)
+          .then((list) => {
+            if (!cancelled) setFiles(list);
+          })
+          .catch(() => {});
+      }
+      const active = activePathRef.current;
+      if (!active) return;
+      const activeName = active.split(/[\\/]/).pop()?.toLowerCase();
+      if (paths.some((p) => p.split(/[\\/]/).pop()?.toLowerCase() === activeName)) {
+        reloadDoc();
+      }
     });
     return () => {
-      unlisten.then((f) => f());
+      cancelled = true;
+      unlisten();
     };
-  }, [openFile]);
+  }, [currentPath, reloadDoc]);
+
+  useEffect(() => {
+    queryRef.current = query;
+  }, [query]);
 
   useEffect(() => {
     const root = contentRef.current;
     if (!root) return;
 
-    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+    if (lastHtmlPathRef.current !== activePath) {
+      if (scrollRef.current) scrollRef.current.scrollTop = 0;
+      lastHtmlPathRef.current = activePath;
+    }
     setActiveId(null);
 
     const headings = Array.from(root.querySelectorAll<HTMLElement>("h1, h2, h3, h4, h5, h6"));
@@ -253,6 +315,15 @@ export default function App() {
       block.appendChild(btn);
     });
 
+    if (activePath) {
+      const dir = activePath.replace(/[\\/][^\\/]*$/, "");
+      root.querySelectorAll<HTMLImageElement>("img").forEach((img) => {
+        const src = img.getAttribute("src") || "";
+        if (!src || /^[a-z][a-z0-9+.-]*:/i.test(src) || src.startsWith("//")) return;
+        img.src = localImageUrl(dir, src);
+      });
+    }
+
     setOutline(
       headings.map((h) => ({
         level: Number(h.tagName[1]),
@@ -272,8 +343,10 @@ export default function App() {
     );
     headings.forEach((h) => observer.observe(h));
 
+    if (queryRef.current) runSearch(queryRef.current, true);
+
     return () => observer.disconnect();
-  }, [html]);
+  }, [html, activePath]);
 
   useEffect(() => {
     const root = contentRef.current;
@@ -296,7 +369,7 @@ export default function App() {
     if (href.startsWith("#")) {
       scrollToHeading(decodeURIComponent(href.slice(1)));
     } else if (/^(?:https?|mailto|tel):/i.test(href)) {
-      openUrl(href).catch((err) => console.error(err));
+      openExternal(href);
     } else if (activePath) {
       const rel = href.split("#")[0];
       if (/\.(?:md|markdown)$/i.test(rel)) {
@@ -323,16 +396,16 @@ export default function App() {
     marksRef.current = [];
   }, []);
 
-  const setCurrentMark = useCallback((index: number) => {
+  const setCurrentMark = useCallback((index: number, scroll = true) => {
     marksRef.current.forEach((mark, i) => {
       mark.classList.toggle("current", i === index);
     });
     setCurrentMatch(index);
-    marksRef.current[index]?.scrollIntoView({ block: "center" });
+    if (scroll) marksRef.current[index]?.scrollIntoView({ block: "center" });
   }, []);
 
   const runSearch = useCallback(
-    (q: string) => {
+    (q: string, keepPosition = false) => {
       clearMarks();
       const root = contentRef.current;
       if (!root || !q) {
@@ -374,9 +447,16 @@ export default function App() {
 
       marksRef.current = marks;
       setMatchCount(marks.length);
-      setCurrentMark(marks.length ? 0 : -1);
+      if (!marks.length) {
+        setCurrentMark(-1);
+        return;
+      }
+      setCurrentMark(
+        keepPosition ? Math.min(Math.max(currentMatch, 0), marks.length - 1) : 0,
+        !keepPosition
+      );
     },
-    [clearMarks, setCurrentMark]
+    [clearMarks, setCurrentMark, currentMatch]
   );
 
   const cancelPendingSearch = () => {
@@ -433,6 +513,7 @@ export default function App() {
   }, [homeDir]);
 
   const clearDoc = () => {
+    openSeqRef.current += 1;
     cancelPendingSearch();
     setQuery("");
     setMatchCount(0);
@@ -444,8 +525,17 @@ export default function App() {
 
   const refreshDir = () => {
     if (!currentPath) return;
-    clearDoc();
     loadDir(currentPath);
+  };
+
+  const openFolder = () => {
+    pickDirectory()
+      .then((dir) => {
+        if (!dir) return;
+        if (dir === currentPath) loadDir(dir);
+        else setCurrentPath(dir);
+      })
+      .catch((e) => setError(String(e)));
   };
 
   const clearDragHistory = () => {
@@ -471,6 +561,7 @@ export default function App() {
           activeId={activeId}
           hasDoc={!!html}
           onRefresh={refreshDir}
+          onOpenFolder={openFolder}
           onClearDragHistory={clearDragHistory}
           onHome={goHome}
           onTabChange={setTab}

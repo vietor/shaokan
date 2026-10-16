@@ -42,7 +42,12 @@ fn list_md_files(dir: String) -> Result<Vec<MdFile>, String> {
 
 #[tauri::command(async)]
 fn read_md_file(path: String) -> Result<String, String> {
-    fs::read_to_string(&path).map_err(|e| e.to_string())
+    let bytes = fs::read(&path).map_err(|e| e.to_string())?;
+    let bytes: &[u8] = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(&bytes);
+    match std::str::from_utf8(bytes) {
+        Ok(text) => Ok(text.to_owned()),
+        Err(_) => Ok(encoding_rs::GB18030.decode(bytes).0.into_owned()),
+    }
 }
 
 #[tauri::command]
@@ -121,6 +126,8 @@ fn setup_context_menu(app: &tauri::AppHandle) {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .setup(|app| {
             #[cfg(windows)]
             setup_context_menu(app.handle());
